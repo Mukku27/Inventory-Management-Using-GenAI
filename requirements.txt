@@ -1,0 +1,6 @@
+streamlit 
+google-generativeai
+python-dotenv
+faker 
+pandas
+plotly
