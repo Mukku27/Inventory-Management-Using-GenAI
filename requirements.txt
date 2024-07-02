@@ -1,6 +1,7 @@
-streamlit 
-google-generativeai
-python-dotenv
-faker 
+streamlit
 pandas
+sqlite3
+python-dotenv
+google-generativeai
 plotly
+faker
