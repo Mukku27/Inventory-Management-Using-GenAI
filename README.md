@@ -30,9 +30,11 @@ This project showcases an innovative approach to inventory management by leverag
    pip install -r requirements.txt
    ```
 
-3. Set up your Google API key:
+3. Set up your Google API key and Pandas AI API key:
    - Create a `.env` file in the project root.
    - Add your Google API key: `GOOGLE_API_KEY=your_api_key_here`
+   - Visit www.pandabi.com .Get your Pandas AI API key
+   - Add your Pandas AI API key :`PANDASAI_API_KEY=your_api_key_here`
 
 4. Initialize the database:
    ```
