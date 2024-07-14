@@ -10,7 +10,7 @@ This project showcases an innovative approach to inventory management by leverag
 - **Inventory Modification**: Add, remove, or update products using natural language commands or Excel file uploads.
 - **Bulk Data Processing**: Upload Excel files for batch updates to the inventory.
 -**Automated Insights**: Products insights generated through the sales and trends 
--**Prediction of stocks**:Predicts the demand of the products 
+-**Prediction of stocks**:Predicts the demand of the products using AI
 -**Generate  Report**:Generates a whole report based the on the database 
 ## Files in the Repository
 
