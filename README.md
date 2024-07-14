@@ -11,7 +11,8 @@ This project showcases an innovative approach to inventory management by leverag
 - **Bulk Data Processing**: Upload Excel files for batch updates to the inventory.
 -**Automated Insights**: Products insights generated through the sales and trends 
 -**Prediction of stocks**:Predicts the demand of the products using AI
--**Generate  Report**:Generates a whole report based the on the database 
+-**Generate  Report**:Generates a whole report based the on the database
+-**Ploting different parameters through user prompt**:This feature helps a Non-technical user to become a potential data analyst and understand  the inventory better  
 ## Files in the Repository
 
 1. `main.py`: The core Streamlit application that handles the user interface and AI interactions.
