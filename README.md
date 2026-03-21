@@ -43,6 +43,7 @@ This project demonstrates an innovative approach to inventory management leverag
    - Create a `.env` file in the project root.
    - Add your Google Cloud API key: `GOOGLE_API_KEY=your_api_key_here`
    - Obtain a PandasAI API key from [www.pandabi.com](www.pandabi.com) and add it: `PANDASAI_API_KEY=your_api_key_here`
+   - If either key is missing, the app will still start and show a warning, but the related AI features will remain unavailable until configured.
 
 4. **Initialize the database:**
    ```bash
@@ -90,4 +91,3 @@ Contributions are welcome!  Follow these steps:
 ## License
 
 This project is licensed under the MIT License - see the `LICENSE` file for details.
-
