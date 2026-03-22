@@ -8,6 +8,12 @@ handles user inputs, and calls functions from other modules to execute the core 
 import streamlit as st
 import os
 from config import GOOGLE_API_KEY, PANDASAI_API_KEY  # ensure configuration is loaded
+from database import (
+    DATABASE_PATH,
+    INVENTORY_VALUE_COLUMN,
+    PRODUCT_TABLE,
+    validate_product_schema,
+)
 from utils import read_sql_query
 from prompt import generate_sql_query
 from excel_processing import process_excel_file
@@ -94,8 +100,19 @@ st.markdown('<h1 class="title">Inventory Management Using GenAI</h1>', unsafe_al
 # Dashboard Metrics Section
 # --------------------------
 st.markdown('<h2>Inventory Dashboard</h2>', unsafe_allow_html=True)
-db_path = 'inventory.db'
-query = "SELECT COUNT(*) as product_count, SUM(price * quantity) as total_inventory_value FROM PRODUCT"
+db_path = str(DATABASE_PATH)
+
+try:
+    validate_product_schema(db_path)
+except RuntimeError as exc:
+    st.error(f"Database startup check failed: {exc}")
+    st.stop()
+
+query = (
+    f"SELECT COUNT(*) as product_count, "
+    f"SUM(price * {INVENTORY_VALUE_COLUMN}) as total_inventory_value "
+    f"FROM {PRODUCT_TABLE}"
+)
 df = read_sql_query(query, db_path)
 product_count = df['product_count'].values[0]
 total_inventory_value = df['total_inventory_value'].values[0]
@@ -135,7 +152,10 @@ question = st.text_area("Enter your query in natural language:")
 
 if st.button("Generate SQL Query"):
     if question:
-        db_description = "Product table schema: PRODUCT (ID INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT, QUANTITY INTEGER, PRICE REAL, CATEGORY TEXT)"
+        db_description = (
+            "Product table schema: PRODUCT "
+            "(ID INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT, STOCK INTEGER, PRICE REAL, CATEGORY TEXT)"
+        )
         sql_query = generate_sql_query(db_description, question)
         st.write("Generated SQL Query:", sql_query)
         try:
