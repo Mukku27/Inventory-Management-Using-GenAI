@@ -1,0 +1,132 @@
+"""Prompt helpers for SQL generation and Gemini-backed fallbacks.
+
+The application imports this module at startup, so the functions here must be
+safe even when optional AI dependencies or API keys are unavailable.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from typing import Dict
+
+_DEFAULT_SQL_LIMIT = 100
+
+
+def _normalize_token(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]+", "", value.upper())
+
+
+def _fallback_sql(question: str) -> str:
+    text = question.lower().strip()
+
+    if any(keyword in text for keyword in ("inventory value", "total value", "total worth", "worth")):
+        return "SELECT COUNT(*) AS product_count, SUM(PRICE * STOCK) AS total_inventory_value FROM PRODUCT"
+
+    if "how many" in text or "count" in text or "number of products" in text:
+        return "SELECT COUNT(*) AS product_count FROM PRODUCT"
+
+    if "low stock" in text or "out of stock" in text:
+        return "SELECT * FROM PRODUCT WHERE STOCK <= 10 ORDER BY STOCK ASC"
+
+    if "category" in text and "count" in text:
+        return "SELECT CATEGORY, COUNT(*) AS product_count FROM PRODUCT GROUP BY CATEGORY ORDER BY product_count DESC"
+
+    if "average price" in text or "avg price" in text:
+        return "SELECT AVG(PRICE) AS average_price FROM PRODUCT"
+
+    if "top" in text and "price" in text:
+        return "SELECT * FROM PRODUCT ORDER BY PRICE DESC LIMIT 10"
+
+    return f"SELECT * FROM PRODUCT LIMIT {_DEFAULT_SQL_LIMIT}"
+
+
+def _fallback_column_mapping(prompt: str) -> str:
+    excel_columns = []
+    database_columns = []
+
+    excel_match = re.search(r"Excel columns:\s*(.*)", prompt, re.IGNORECASE)
+    database_match = re.search(r"Database columns:\s*(.*)", prompt, re.IGNORECASE)
+    if excel_match:
+        excel_columns = [value.strip() for value in excel_match.group(1).split(",") if value.strip()]
+    if database_match:
+        database_columns = [value.strip() for value in database_match.group(1).split(",") if value.strip()]
+
+    mapping: Dict[str, str] = {}
+    db_lookup = {_normalize_token(column): column for column in database_columns}
+
+    aliases = {
+        "NAME": ("NAME", "PRODUCTNAME", "ITEMNAME", "PRODUCT"),
+        "CATEGORY": ("CATEGORY", "TYPE", "GROUP"),
+        "BRAND": ("BRAND",),
+        "PRICE": ("PRICE", "COST", "AMOUNT", "RATE"),
+        "STOCK": ("STOCK", "QUANTITY", "QTY", "INVENTORY"),
+        "QUANTITY": ("QUANTITY", "STOCK", "QTY", "INVENTORY"),
+        "COLOR": ("COLOR", "COLOUR"),
+        "SIZE": ("SIZE",),
+        "WEIGHT": ("WEIGHT",),
+        "SPECIFICATIONS": ("SPECIFICATIONS", "SPECIFICATION", "DETAILS", "DESCRIPTION", "SPEC"),
+        "ID": ("ID", "PRODUCTID"),
+    }
+
+    for excel_column in excel_columns:
+        normalized = _normalize_token(excel_column)
+        if normalized in db_lookup:
+            mapping[excel_column] = db_lookup[normalized]
+            continue
+
+        mapped_column = None
+        for target, candidates in aliases.items():
+            if normalized in candidates:
+                mapped_column = db_lookup.get(_normalize_token(target), target)
+                break
+
+        if mapped_column is None:
+            mapped_column = re.sub(r"[^A-Z0-9]+", "_", excel_column.upper()).strip("_") or "COLUMN"
+
+        mapping[excel_column] = mapped_column
+
+    return json.dumps(mapping)
+
+
+def get_gemini_response(prompt: str, model_name: str = "gemini-1.5-flash") -> str:
+    """Return a Gemini response when available, otherwise a deterministic fallback."""
+
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if api_key:
+        try:
+            import google.generativeai as genai
+
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            text = getattr(response, "text", None)
+            if text:
+                return text.strip()
+        except Exception:
+            pass
+
+    if "excel columns" in prompt.lower() and "database columns" in prompt.lower():
+        return _fallback_column_mapping(prompt)
+
+    return _fallback_sql(prompt)
+
+
+def generate_sql_query(db_description: str, question: str) -> str:
+    """Generate a SQL query for the question, using Gemini when available."""
+
+    prompt = (
+        "You are an expert SQL assistant. Generate a single SQL query only.\n"
+        f"Database description: {db_description}\n"
+        f"Question: {question}\n"
+        "Return only the SQL statement."
+    )
+
+    response = get_gemini_response(prompt)
+    sql = response.strip().strip("`")
+
+    if sql.upper().startswith("SELECT") or sql.upper().startswith("WITH"):
+        return sql
+
+    return _fallback_sql(question)
