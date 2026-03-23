@@ -7,7 +7,7 @@ handles user inputs, and calls functions from other modules to execute the core 
 
 import streamlit as st
 import os
-from config import GOOGLE_API_KEY, PANDASAI_API_KEY  # ensure configuration is loaded
+from config import GOOGLE_API_KEY, PANDASAI_API_KEY, MISSING_CREDENTIALS  # ensure configuration is loaded
 from database import (
     DATABASE_PATH,
     INVENTORY_VALUE_COLUMN,
@@ -27,6 +27,13 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+if MISSING_CREDENTIALS:
+    st.warning(
+        "Missing API credentials: {}. AI-backed features will stay available only after they are configured.".format(
+            ", ".join(MISSING_CREDENTIALS)
+        )
+    )
 
 # Custom CSS for dark theme styling
 st.markdown("""

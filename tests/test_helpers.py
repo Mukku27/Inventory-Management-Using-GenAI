@@ -158,6 +158,7 @@ class HelperSmokeTests(unittest.TestCase):
         fake_streamlit.write = lambda *args, **kwargs: None
         fake_streamlit.error = lambda *args, **kwargs: None
         fake_streamlit.success = lambda *args, **kwargs: None
+        fake_streamlit.warning = lambda *args, **kwargs: None
 
         fake_pandas = types.ModuleType("pandas")
         fake_pandas.read_excel = lambda uploaded_file: None
@@ -165,6 +166,13 @@ class HelperSmokeTests(unittest.TestCase):
         fake_config = types.ModuleType("config")
         fake_config.GOOGLE_API_KEY = None
         fake_config.PANDASAI_API_KEY = None
+        fake_config.MISSING_CREDENTIALS = []
+
+        fake_database = types.ModuleType("database")
+        fake_database.DATABASE_PATH = Path("inventory.db")
+        fake_database.INVENTORY_VALUE_COLUMN = "STOCK"
+        fake_database.PRODUCT_TABLE = "PRODUCT"
+        fake_database.validate_product_schema = lambda path: None
 
         fake_analytics = types.ModuleType("analytics")
         fake_analytics.generate_insights = lambda df: "insights"
@@ -208,6 +216,7 @@ class HelperSmokeTests(unittest.TestCase):
                     "streamlit": fake_streamlit,
                     "pandas": fake_pandas,
                     "config": fake_config,
+                    "database": fake_database,
                     "analytics": fake_analytics,
                     "pandasai": fake_pandasai,
                 }

@@ -5,16 +5,47 @@ This module loads environment variables and configures API keys for the applicat
 """
 
 import os
+from dataclasses import dataclass
 from dotenv import load_dotenv
 import google.generativeai as genai
+
+
+@dataclass(frozen=True)
+class Settings:
+    google_api_key: str | None
+    pandasai_api_key: str | None
+
+    @property
+    def missing_credentials(self) -> list[str]:
+        missing = []
+        if not self.google_api_key:
+            missing.append("GOOGLE_API_KEY")
+        if not self.pandasai_api_key:
+            missing.append("PANDASAI_API_KEY")
+        return missing
+
+
+def _read_env(name: str) -> str | None:
+    value = os.getenv(name)
+    return value if isinstance(value, str) and value else None
+
 
 # Load environment variables from the .env file
 load_dotenv()
 
+SETTINGS = Settings(
+    google_api_key=_read_env("GOOGLE_API_KEY"),
+    pandasai_api_key=_read_env("PANDASAI_API_KEY"),
+)
+
 # Configure Google API key for Gemini Pro model
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-genai.configure(api_key=GOOGLE_API_KEY)
+GOOGLE_API_KEY = SETTINGS.google_api_key
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
 
 # Configure PandasAI API key
-PANDASAI_API_KEY = os.getenv("PANDASAI_API_KEY")
-os.environ["PANDASAI_API_KEY"] = PANDASAI_API_KEY
+PANDASAI_API_KEY = SETTINGS.pandasai_api_key
+if PANDASAI_API_KEY:
+    os.environ["PANDASAI_API_KEY"] = PANDASAI_API_KEY
+
+MISSING_CREDENTIALS = SETTINGS.missing_credentials
