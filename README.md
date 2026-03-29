@@ -36,8 +36,12 @@ This project demonstrates an innovative approach to inventory management leverag
 
 2. **Install dependencies:**
    ```bash
+   python3.11 -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
    ```
+
+   The dependency set is verified on Python 3.11. `sqlite3` is included with Python's standard library and does not need to be installed separately.
 
 3. **Set up API keys:**
    - Create a `.env` file in the project root.
@@ -70,12 +74,13 @@ The application provides these main functionalities:
 
 - streamlit
 - pandas
-- sqlite3
 - python-dotenv
 - google-generativeai
 - pandasai
 - plotly
 - faker
+
+`sqlite3` is included with Python's standard library and does not need to be installed with `pip`.
 
 
 ## Contributing
