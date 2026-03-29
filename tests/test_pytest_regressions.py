@@ -72,9 +72,21 @@ def excel_processing_module(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
     monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
-    sys.modules.pop("excel_processing", None)
+    # Use monkeypatch so the entry is restored after the test, avoiding stale
+    # cached modules that imported with fake streamlit/pandas dependencies.
+    monkeypatch.delitem(sys.modules, "excel_processing", raising=False)
 
     module = importlib.import_module("excel_processing")
+    # Register the freshly imported module through monkeypatch so teardown
+    # removes it and downstream tests start clean.
+    monkeypatch.setitem(sys.modules, "excel_processing", module)
+
+    # Isolate the test from utils/prompt: map each Excel column name to its
+    # upper-cased equivalent (matching the PRODUCT schema convention) without
+    # calling Gemini or the heuristic logic.
+    monkeypatch.setattr(module, "map_columns", lambda cols, existing, fn: {c: c.upper() for c in cols})
+    monkeypatch.setattr(module, "add_column_to_db", lambda *args, **kwargs: None)
+
     return module
 
 
@@ -96,6 +108,25 @@ def test_initialize_database_bootstraps_a_deterministic_schema(monkeypatch, tmp_
 
     assert row_count == len(seeded_rows)
     assert total_value == pytest.approx((9.99 * 12) + (4.5 * 20))
+
+
+def test_validate_product_schema_raises_when_table_is_absent(tmp_path: Path):
+    db_path = tmp_path / "empty.db"
+    sqlite3.connect(db_path).close()
+
+    with pytest.raises(RuntimeError, match="does not contain the required"):
+        database.validate_product_schema(db_path)
+
+
+def test_validate_product_schema_raises_on_missing_column(tmp_path: Path):
+    db_path = tmp_path / "incomplete.db"
+    with sqlite3.connect(db_path) as connection:
+        # Create PRODUCT with only a subset of required columns.
+        connection.execute("CREATE TABLE PRODUCT (ID INTEGER PRIMARY KEY, NAME TEXT)")
+        connection.commit()
+
+    with pytest.raises(RuntimeError, match="Missing columns"):
+        database.validate_product_schema(db_path)
 
 
 def test_process_excel_file_modify_updates_existing_rows(
@@ -139,6 +170,44 @@ def test_process_excel_file_remove_deletes_matching_rows(
     assert remaining_names == ["Widget"]
 
 
+def test_process_excel_file_add_inserts_new_product(
+    excel_processing_module,
+    inventory_db: Path,
+):
+    excel_processing_module.pd.read_excel = lambda uploaded_file: FakeFrame(
+        [{"Name": "NewWidget", "Category": "Tools", "Price": 5.0, "Stock": 10}]
+    )
+
+    excel_processing_module.process_excel_file(object(), str(inventory_db), "add")
+
+    with sqlite3.connect(inventory_db) as connection:
+        names = [row[0] for row in connection.execute("SELECT NAME FROM PRODUCT ORDER BY NAME")]
+
+    assert "NewWidget" in names
+    assert len(names) == 3  # Widget + Gizmo + NewWidget
+
+
+def test_process_excel_file_add_upserts_existing_product(
+    excel_processing_module,
+    inventory_db: Path,
+):
+    excel_processing_module.pd.read_excel = lambda uploaded_file: FakeFrame(
+        [{"Name": "Widget", "Category": "Updated Gadgets", "Price": 15.0, "Stock": 5}]
+    )
+
+    excel_processing_module.process_excel_file(object(), str(inventory_db), "add")
+
+    with sqlite3.connect(inventory_db) as connection:
+        row = connection.execute(
+            "SELECT NAME, CATEGORY, PRICE, STOCK FROM PRODUCT WHERE NAME = ?",
+            ("Widget",),
+        ).fetchone()
+        total_rows = connection.execute("SELECT COUNT(*) FROM PRODUCT").fetchone()[0]
+
+    assert row == ("Widget", "Updated Gadgets", 15.0, 5)
+    assert total_rows == 2  # no duplicate inserted
+
+
 def test_get_gemini_response_uses_mocked_sdk_when_api_key_is_available(monkeypatch):
     calls = []
 
@@ -168,3 +237,11 @@ def test_get_gemini_response_uses_mocked_sdk_when_api_key_is_available(monkeypat
     assert ("configure", {"api_key": "test-key"}) in calls
     assert ("model", "fake-model") in calls
     assert ("prompt", "List all products") in calls
+
+
+def test_get_gemini_response_falls_back_when_no_api_key(monkeypatch):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    response = prompt.get_gemini_response("how many products are there")
+
+    assert "SELECT" in response.upper()
