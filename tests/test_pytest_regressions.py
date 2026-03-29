@@ -23,6 +23,8 @@ class FakeFrame:
         self.columns = FakeColumns(list(self._rows[0].keys()) if self._rows else [])
 
     def iterrows(self):
+        if not self._rows:
+            return
         for index, row in enumerate(self._rows):
             yield index, row
 
@@ -111,6 +113,8 @@ def test_initialize_database_bootstraps_a_deterministic_schema(monkeypatch, tmp_
 
 
 def test_validate_product_schema_raises_when_table_is_absent(tmp_path: Path):
+    # Covers the case where the database exists but has no PRODUCT table at all
+    # (complementary to test_database_schema.py which always creates the table first).
     db_path = tmp_path / "empty.db"
     sqlite3.connect(db_path).close()
 
@@ -118,21 +122,12 @@ def test_validate_product_schema_raises_when_table_is_absent(tmp_path: Path):
         database.validate_product_schema(db_path)
 
 
-def test_validate_product_schema_raises_on_missing_column(tmp_path: Path):
-    db_path = tmp_path / "incomplete.db"
-    with sqlite3.connect(db_path) as connection:
-        # Create PRODUCT with only a subset of required columns.
-        connection.execute("CREATE TABLE PRODUCT (ID INTEGER PRIMARY KEY, NAME TEXT)")
-        connection.commit()
-
-    with pytest.raises(RuntimeError, match="Missing columns"):
-        database.validate_product_schema(db_path)
-
-
 def test_process_excel_file_modify_updates_existing_rows(
     excel_processing_module,
     inventory_db: Path,
 ):
+    # fake_pandas is a fresh types.ModuleType created per test inside the fixture;
+    # direct assignment needs no monkeypatch teardown because the object is discarded.
     excel_processing_module.pd.read_excel = lambda uploaded_file: FakeFrame(
         [
             {
@@ -244,4 +239,4 @@ def test_get_gemini_response_falls_back_when_no_api_key(monkeypatch):
 
     response = prompt.get_gemini_response("how many products are there")
 
-    assert "SELECT" in response.upper()
+    assert response == "SELECT COUNT(*) AS product_count FROM PRODUCT"
