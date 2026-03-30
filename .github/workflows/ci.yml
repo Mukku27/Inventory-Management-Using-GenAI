@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: ["main"]
   pull_request:
 
 jobs:
@@ -35,15 +36,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install runtime dependencies
+      - name: Install all dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
+          pip install -e ".[dev]"
 
       - name: Audit dependencies for known vulnerabilities
-        run: |
-          pip install "pip-audit>=2.7"
-          pip-audit
+        run: pip-audit
 
   test:
     name: Test (Python ${{ matrix.python-version }})

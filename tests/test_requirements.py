@@ -11,10 +11,13 @@ PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 
 def _requirement_names() -> list[str]:
     pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
-    dependencies = pyproject["project"]["dependencies"]
+    all_deps: list[str] = list(pyproject["project"]["dependencies"])
+    for extra_deps in pyproject["project"].get("optional-dependencies", {}).values():
+        all_deps.extend(extra_deps)
+
     requirement_names = []
 
-    for dependency in dependencies:
+    for dependency in all_deps:
         requirement_name = dependency.split(";", 1)[0].strip()
         requirement_name = requirement_name.split("[", 1)[0]
 
