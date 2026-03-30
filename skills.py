@@ -6,11 +6,12 @@ This module defines additional skills for the AI agent, such as plotting paramet
 
 from pandasai.skills import skill
 
+
 @skill
 def plot_parameter(parameter1, parameter2, df):
     """
     Displays a bar chart comparing two parameters from the dataframe.
-    
+
     Args:
         parameter1 (str): The first parameter to plot.
         parameter2 (str): The second parameter to plot.

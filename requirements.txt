@@ -1,7 +1,0 @@
-streamlit
-pandas
-python-dotenv
-google-generativeai
-plotly
-faker
-pandasai
