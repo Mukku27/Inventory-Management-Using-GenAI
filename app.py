@@ -5,20 +5,23 @@ The main entry point for the Inventory Management application. This module initi
 handles user inputs, and calls functions from other modules to execute the core logic.
 """
 
+
 import streamlit as st
-import os
-from config import GOOGLE_API_KEY, PANDASAI_API_KEY, MISSING_CREDENTIALS  # ensure configuration is loaded
+from pandasai import Agent
+
+from analytics import categorize_product, generate_insights, generate_report, predict_stock_needs
+from config import (  # ensure configuration is loaded
+    MISSING_CREDENTIALS,
+)
 from database import (
     DATABASE_PATH,
     INVENTORY_VALUE_COLUMN,
     PRODUCT_TABLE,
     validate_product_schema,
 )
-from utils import read_sql_query
-from prompt import generate_sql_query
 from excel_processing import process_excel_file
-from analytics import generate_insights, predict_stock_needs, categorize_product, generate_report
-from pandasai import Agent
+from prompt import generate_sql_query
+from utils import read_sql_query
 
 # Set up Streamlit page configuration
 st.set_page_config(

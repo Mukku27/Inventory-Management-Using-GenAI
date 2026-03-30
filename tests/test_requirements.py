@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import pathlib
 import sys
+import tomllib
 import unittest
 
-
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-REQUIREMENTS_PATH = REPO_ROOT / "requirements.txt"
+PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 
 
 def _requirement_names() -> list[str]:
+    pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
+    dependencies = pyproject["project"]["dependencies"]
     requirement_names = []
 
-    for raw_line in REQUIREMENTS_PATH.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
+    for dependency in dependencies:
+        requirement_name = dependency.split(";", 1)[0].strip()
+        requirement_name = requirement_name.split("[", 1)[0]
 
-        requirement_name = line.split("[", 1)[0]
         for separator in ("==", ">=", "<=", "~=", "!=", ">", "<"):
             requirement_name = requirement_name.split(separator, 1)[0]
 
@@ -39,7 +39,7 @@ class RequirementsTests(unittest.TestCase):
             listed_stdlib_modules,
             [],
             (
-                "requirements.txt should only include pip-installable packages. "
+                "pyproject.toml should only include pip-installable packages. "
                 f"Found standard-library modules: {', '.join(listed_stdlib_modules)}"
             ),
         )

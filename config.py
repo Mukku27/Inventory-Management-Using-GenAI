@@ -6,8 +6,9 @@ This module loads environment variables and configures API keys for the applicat
 
 import os
 from dataclasses import dataclass
-from dotenv import load_dotenv
+
 import google.generativeai as genai
+from dotenv import load_dotenv
 
 
 @dataclass(frozen=True)

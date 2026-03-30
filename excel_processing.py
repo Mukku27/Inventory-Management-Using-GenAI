@@ -4,16 +4,19 @@ excel_processing.py
 This module handles the processing of uploaded Excel files and updates the database accordingly.
 """
 
-import pandas as pd
 import sqlite3
+
+import pandas as pd
 import streamlit as st
-from utils import add_column_to_db, map_columns
+
 from prompt import get_gemini_response
+from utils import add_column_to_db, map_columns
+
 
 def process_excel_file(uploaded_file, db_path, action):
     """
     Processes an uploaded Excel file to update the PRODUCT table in the database.
-    
+
     Args:
         uploaded_file: The uploaded Excel file.
         db_path (str): The path to the database.

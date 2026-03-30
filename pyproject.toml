@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inventory-management-genai"
+version = "0.1.0"
+description = "Inventory Management application powered by Generative AI"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit>=1.35",
+    "pandas>=2.0",
+    "python-dotenv>=1.0",
+    "google-generativeai>=0.7",
+    "plotly>=5.0",
+    "faker>=19.12,<20",
+    "pandasai>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<10",
+    "ruff>=0.4",
+    "pip-audit>=2.7",
+]
+
+[tool.setuptools]
+py-modules = [
+    "analytics",
+    "app",
+    "config",
+    "database",
+    "excel_processing",
+    "prompt",
+    "skills",
+    "utils",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+# E501 (line-too-long) is handled at the formatter level
+ignore = ["E501"]

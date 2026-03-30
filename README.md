@@ -38,10 +38,10 @@ This project demonstrates an innovative approach to inventory management leverag
    ```bash
    python3.11 -m venv .venv
    source .venv/bin/activate
-   pip install -r requirements.txt
+   pip install -e ".[dev]"
    ```
 
-   The dependency set is verified on Python 3.11. `sqlite3` is included with Python's standard library and does not need to be installed separately.
+   The dependency set is verified on Python 3.11 and is managed through `pyproject.toml`. `sqlite3` is included with Python's standard library and does not need to be installed separately.
 
 3. **Set up API keys:**
    - Create a `.env` file in the project root.
