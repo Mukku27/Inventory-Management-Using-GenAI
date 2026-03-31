@@ -46,6 +46,14 @@ def test_validate_read_only_sql_blocks_comma_join_bypass():
         )
 
 
+def test_validate_read_only_sql_blocks_derived_table_comma_join_bypass():
+    with pytest.raises(SqlGuardrailViolation, match="Comma-separated table references"):
+        validate_read_only_sql(
+            "SELECT * FROM (SELECT * FROM PRODUCT) product_rows, SQLITE_MASTER",
+            allowed_tables=("PRODUCT",),
+        )
+
+
 def test_schema_changes_require_explicit_approval():
     review = review_column_mappings(
         {"Name": "NAME", "Mystery Metric": "mystery metric"},

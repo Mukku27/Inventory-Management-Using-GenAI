@@ -108,6 +108,63 @@ def _strip_string_literals(sql: str) -> str:
     return re.sub(r"'(?:''|[^'])*'", "''", sql)
 
 
+def _matches_keyword(sql: str, start: int, keyword: str) -> bool:
+    end = start + len(keyword)
+    return (
+        sql.startswith(keyword, start)
+        and (start == 0 or not (sql[start - 1].isalnum() or sql[start - 1] == "_"))
+        and (end == len(sql) or not (sql[end].isalnum() or sql[end] == "_"))
+    )
+
+
+def _has_top_level_comma_join(sql: str) -> bool:
+    clause_boundaries = (
+        "WHERE",
+        "GROUP",
+        "ORDER",
+        "LIMIT",
+        "UNION",
+        "EXCEPT",
+        "INTERSECT",
+        "HAVING",
+        "WINDOW",
+    )
+    depth = 0
+    in_from_clause = False
+    index = 0
+
+    while index < len(sql):
+        char = sql[index]
+        if char == "(":
+            depth += 1
+            index += 1
+            continue
+        if char == ")":
+            depth = max(depth - 1, 0)
+            index += 1
+            continue
+
+        if depth == 0:
+            matched_boundary = next(
+                (keyword for keyword in clause_boundaries if _matches_keyword(sql, index, keyword)),
+                None,
+            )
+            if matched_boundary is not None:
+                in_from_clause = False
+                index += len(matched_boundary)
+                continue
+            if _matches_keyword(sql, index, "FROM") or _matches_keyword(sql, index, "JOIN"):
+                in_from_clause = True
+                index += 4
+                continue
+            if in_from_clause and char == ",":
+                return True
+
+        index += 1
+
+    return False
+
+
 def _extract_cte_names(sql: str) -> set[str]:
     return {
         match.group(1)
@@ -125,7 +182,8 @@ def validate_read_only_sql(sql: str, allowed_tables: Iterable[str]) -> str:
     if not candidate:
         raise SqlGuardrailViolation("The model did not return a SQL statement.")
 
-    if "--" in candidate or "/*" in candidate:
+    sql_without_literals = _strip_string_literals(candidate)
+    if "--" in sql_without_literals or "/*" in sql_without_literals:
         raise SqlGuardrailViolation("SQL comments are not allowed in AI-generated queries.")
 
     stripped = candidate.rstrip()
@@ -133,13 +191,10 @@ def validate_read_only_sql(sql: str, allowed_tables: Iterable[str]) -> str:
         raise SqlGuardrailViolation("Only a single SQL statement may be executed.")
     candidate = stripped.rstrip(";").strip()
 
-    if re.search(
-        r"\bFROM\s+[A-Z_][A-Z0-9_]*(?:\s+[A-Z_][A-Z0-9_]*)?\s*,",
-        re.sub(r"\s+", " ", _strip_string_literals(candidate)).upper(),
-    ):
+    normalized = re.sub(r"\s+", " ", _strip_string_literals(candidate)).upper()
+    if _has_top_level_comma_join(normalized):
         raise SqlGuardrailViolation("Comma-separated table references are not allowed.")
 
-    normalized = re.sub(r"\s+", " ", _strip_string_literals(candidate)).upper()
     if not normalized.startswith(("SELECT", "WITH")):
         raise SqlGuardrailViolation("Only read-only SELECT queries are allowed.")
 

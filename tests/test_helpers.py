@@ -159,6 +159,7 @@ class HelperSmokeTests(unittest.TestCase):
         fake_streamlit.file_uploader = lambda *args, **kwargs: None
         fake_streamlit.selectbox = lambda *args, **kwargs: "add"
         fake_streamlit.checkbox = lambda *args, **kwargs: False
+        fake_streamlit.session_state = {}
         fake_streamlit.text_input = lambda *args, **kwargs: ""
         fake_streamlit.pyplot = lambda *args, **kwargs: None
         fake_streamlit.write = lambda *args, **kwargs: None

@@ -6,6 +6,8 @@ handles user inputs, and calls functions from other modules to execute the core 
 """
 
 
+import hashlib
+
 import streamlit as st
 
 try:
@@ -38,6 +40,54 @@ from prompt import (
     get_sql_prompt_metadata,
 )
 from utils import read_sql_query
+
+IMPORT_PREVIEW_STATE_KEY = "excel_import_preview"
+
+
+def _get_uploaded_file_signature(uploaded_file) -> str | None:
+    if uploaded_file is None:
+        return None
+
+    payload = None
+    if hasattr(uploaded_file, "getvalue"):
+        payload = uploaded_file.getvalue()
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(0)
+
+    if isinstance(payload, str):
+        payload = payload.encode("utf-8")
+    if isinstance(payload, (bytes, bytearray)):
+        digest = hashlib.sha256(payload).hexdigest()
+        return f"{getattr(uploaded_file, 'name', '')}:{digest}"
+
+    fallback = "{}:{}".format(
+        getattr(uploaded_file, "name", ""),
+        getattr(uploaded_file, "size", ""),
+    )
+    return hashlib.sha256(fallback.encode("utf-8")).hexdigest()
+
+
+def _clear_cached_import_preview() -> None:
+    st.session_state.pop(IMPORT_PREVIEW_STATE_KEY, None)
+
+
+def _get_cached_import_preview(uploaded_file, db_path):
+    cache_key = _get_uploaded_file_signature(uploaded_file)
+    cached_preview = st.session_state.get(IMPORT_PREVIEW_STATE_KEY)
+    if (
+        cached_preview
+        and cached_preview.get("cache_key") == cache_key
+        and cached_preview.get("db_path") == db_path
+    ):
+        return cached_preview["preview"]
+
+    preview = preview_excel_import(uploaded_file, db_path, emit_audit_event=True)
+    st.session_state[IMPORT_PREVIEW_STATE_KEY] = {
+        "cache_key": cache_key,
+        "db_path": db_path,
+        "preview": preview,
+    }
+    return preview
 
 # Set up Streamlit page configuration
 st.set_page_config(
@@ -242,10 +292,13 @@ uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx"])
 action = st.selectbox("Select Action", ["add", "remove", "modify"])
 approve_schema_changes = False
 approve_destructive_action = False
+import_preview = None
 
-if uploaded_file is not None:
+if uploaded_file is None:
+    _clear_cached_import_preview()
+else:
     try:
-        import_preview = preview_excel_import(uploaded_file, db_path, emit_audit_event=True)
+        import_preview = _get_cached_import_preview(uploaded_file, db_path)
         st.write("Resolved column mappings:", import_preview["column_mappings"])
         if action in {"remove", "modify"}:
             st.warning(
@@ -275,18 +328,23 @@ if uploaded_file is not None:
                 "error": str(exc),
             },
         )
+        _clear_cached_import_preview()
         st.error(f"Unable to preview the Excel import: {exc}")
 
 if st.button("Process Excel File"):
     if uploaded_file:
         try:
+            if import_preview is None:
+                import_preview = _get_cached_import_preview(uploaded_file, db_path)
             process_excel_file(
                 uploaded_file,
                 db_path,
                 action,
                 allow_schema_changes=approve_schema_changes,
                 allow_destructive_actions=approve_destructive_action,
+                preview=import_preview,
             )
+            _clear_cached_import_preview()
             st.success(f"Successfully processed the Excel file for {action} action.")
         except DestructiveActionApprovalRequired as exc:
             st.error(str(exc))

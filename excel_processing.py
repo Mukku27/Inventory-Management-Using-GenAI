@@ -68,6 +68,7 @@ def process_excel_file(
     action,
     allow_schema_changes=False,
     allow_destructive_actions=False,
+    preview=None,
 ):
     """
     Processes an uploaded Excel file to update the PRODUCT table in the database.
@@ -77,7 +78,7 @@ def process_excel_file(
         db_path (str): The path to the database.
         action (str): The action to perform ("add", "remove", or "modify").
     """
-    preview = preview_excel_import(uploaded_file, db_path)
+    preview = preview or preview_excel_import(uploaded_file, db_path)
     df = preview["dataframe"]
     column_mappings = preview["column_mappings"]
     audit_details = {

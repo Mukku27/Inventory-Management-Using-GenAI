@@ -215,6 +215,39 @@ def test_process_excel_file_add_upserts_existing_product(
     assert total_rows == 2  # no duplicate inserted
 
 
+def test_process_excel_file_uses_reviewed_preview_without_regenerating_mapping(
+    excel_processing_module,
+    inventory_db: Path,
+    monkeypatch,
+):
+    excel_processing_module.pd.read_excel = lambda uploaded_file: FakeFrame(
+        [{"Name": "Widget", "Category": "Updated Gadgets"}]
+    )
+
+    preview = excel_processing_module.preview_excel_import(object(), str(inventory_db))
+    assert preview["column_mappings"]["Category"] == "CATEGORY"
+
+    def fail_if_mapping_recomputed(*args, **kwargs):
+        raise AssertionError("process_excel_file should reuse the reviewed preview")
+
+    monkeypatch.setattr(excel_processing_module, "map_columns", fail_if_mapping_recomputed)
+
+    excel_processing_module.process_excel_file(
+        object(),
+        str(inventory_db),
+        "add",
+        preview=preview,
+    )
+
+    with sqlite3.connect(inventory_db) as connection:
+        row = connection.execute(
+            "SELECT NAME, CATEGORY, PRICE FROM PRODUCT WHERE NAME = ?",
+            ("Widget",),
+        ).fetchone()
+
+    assert row == ("Widget", "Updated Gadgets", 9.99)
+
+
 def test_process_excel_file_blocks_ai_schema_changes_without_approval(
     excel_processing_module,
     inventory_db: Path,
