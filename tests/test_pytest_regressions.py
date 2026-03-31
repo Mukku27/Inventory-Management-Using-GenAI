@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sqlite3
 import sys
 import types
@@ -10,6 +11,7 @@ import pytest
 
 import database
 import prompt
+from guardrails import DestructiveActionApprovalRequired, SchemaChangeApprovalRequired
 
 
 class FakeColumns(list):
@@ -140,7 +142,12 @@ def test_process_excel_file_modify_updates_existing_rows(
         ]
     )
 
-    excel_processing_module.process_excel_file(object(), str(inventory_db), "modify")
+    excel_processing_module.process_excel_file(
+        object(),
+        str(inventory_db),
+        "modify",
+        allow_destructive_actions=True,
+    )
 
     with sqlite3.connect(inventory_db) as connection:
         row = connection.execute(
@@ -157,7 +164,12 @@ def test_process_excel_file_remove_deletes_matching_rows(
 ):
     excel_processing_module.pd.read_excel = lambda uploaded_file: FakeFrame([{"Name": "Gizmo"}])
 
-    excel_processing_module.process_excel_file(object(), str(inventory_db), "remove")
+    excel_processing_module.process_excel_file(
+        object(),
+        str(inventory_db),
+        "remove",
+        allow_destructive_actions=True,
+    )
 
     with sqlite3.connect(inventory_db) as connection:
         remaining_names = [row[0] for row in connection.execute("SELECT NAME FROM PRODUCT")]
@@ -201,6 +213,53 @@ def test_process_excel_file_add_upserts_existing_product(
 
     assert row == ("Widget", "Updated Gadgets", 15.0, 5)
     assert total_rows == 2  # no duplicate inserted
+
+
+def test_process_excel_file_blocks_ai_schema_changes_without_approval(
+    excel_processing_module,
+    inventory_db: Path,
+    monkeypatch,
+):
+    excel_processing_module.pd.read_excel = lambda uploaded_file: FakeFrame(
+        [{"Name": "Widget", "Mystery Metric": "High"}]
+    )
+    monkeypatch.setattr(
+        excel_processing_module,
+        "map_columns",
+        lambda cols, existing, fn: {"Name": "NAME", "Mystery Metric": "mystery metric"},
+    )
+
+    with pytest.raises(SchemaChangeApprovalRequired, match="MYSTERY_METRIC"):
+        excel_processing_module.process_excel_file(object(), str(inventory_db), "add")
+
+    with sqlite3.connect(inventory_db) as connection:
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(PRODUCT)")]
+
+    assert "MYSTERY_METRIC" not in columns
+    audit_path = inventory_db.with_name("ai_operation_audit.jsonl")
+    events = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+    assert events[-1]["event_type"] == "excel_import_processed"
+    assert events[-1]["details"]["status"] == "blocked"
+
+
+def test_process_excel_file_blocks_destructive_actions_without_approval(
+    excel_processing_module,
+    inventory_db: Path,
+):
+    excel_processing_module.pd.read_excel = lambda uploaded_file: FakeFrame([{"Name": "Gizmo"}])
+
+    with pytest.raises(DestructiveActionApprovalRequired, match="REMOVE"):
+        excel_processing_module.process_excel_file(object(), str(inventory_db), "remove")
+
+    with sqlite3.connect(inventory_db) as connection:
+        remaining_names = [row[0] for row in connection.execute("SELECT NAME FROM PRODUCT ORDER BY NAME")]
+
+    assert remaining_names == ["Gizmo", "Widget"]
+    audit_path = inventory_db.with_name("ai_operation_audit.jsonl")
+    events = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+    assert events[-1]["event_type"] == "excel_import_processed"
+    assert events[-1]["details"]["status"] == "blocked"
+    assert events[-1]["details"]["error"].endswith("Blocked action: REMOVE.")
 
 
 def test_get_gemini_response_uses_mocked_sdk_when_api_key_is_available(monkeypatch):

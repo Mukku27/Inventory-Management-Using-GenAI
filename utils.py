@@ -13,6 +13,8 @@ import sqlite3
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Sequence
 
+from prompt import build_column_mapping_prompt
+
 try:  # Optional dependency for richer return values when available.
     import pandas as _pandas  # type: ignore
 except Exception:  # pragma: no cover - exercised only when pandas is installed.
@@ -235,12 +237,7 @@ def map_columns(
 
     excel_columns = [str(column) for column in excel_columns]
     existing_columns = [str(column) for column in existing_columns]
-    prompt = (
-        "Map these Excel columns to the database columns.\n"
-        f"Excel columns: {', '.join(excel_columns)}\n"
-        f"Database columns: {', '.join(existing_columns)}\n"
-        "Return only a JSON object or simple key/value mapping."
-    )
+    prompt = build_column_mapping_prompt(excel_columns, existing_columns)
 
     if response_fn is not None:
         try:

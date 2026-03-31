@@ -125,7 +125,12 @@ class HelperSmokeTests(unittest.TestCase):
             with patched_modules({"streamlit": fake_streamlit, "pandas": fake_pandas}):
                 excel_processing = importlib.import_module("excel_processing")
                 excel_processing.pd.read_excel = lambda uploaded_file: FakeFrame()
-                excel_processing.process_excel_file(object(), str(db_path), "add")
+                excel_processing.process_excel_file(
+                    object(),
+                    str(db_path),
+                    "add",
+                    allow_schema_changes=True,
+                )
 
             with sqlite3.connect(db_path) as connection:
                 columns = [row[1] for row in connection.execute("PRAGMA table_info(PRODUCT)")]
@@ -153,6 +158,7 @@ class HelperSmokeTests(unittest.TestCase):
         fake_streamlit.button = lambda *args, **kwargs: False
         fake_streamlit.file_uploader = lambda *args, **kwargs: None
         fake_streamlit.selectbox = lambda *args, **kwargs: "add"
+        fake_streamlit.checkbox = lambda *args, **kwargs: False
         fake_streamlit.text_input = lambda *args, **kwargs: ""
         fake_streamlit.pyplot = lambda *args, **kwargs: None
         fake_streamlit.write = lambda *args, **kwargs: None

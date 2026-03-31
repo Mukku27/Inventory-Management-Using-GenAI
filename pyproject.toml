@@ -34,10 +34,12 @@ dev = [
 [tool.setuptools]
 py-modules = [
     "analytics",
+    "audit",
     "app",
     "config",
     "database",
     "excel_processing",
+    "guardrails",
     "prompt",
     "skills",
     "utils",
