@@ -7,7 +7,12 @@ handles user inputs, and calls functions from other modules to execute the core 
 
 
 import streamlit as st
-from pandasai import Agent
+
+try:
+    from pandasai import Agent as _PandasAIAgent
+    _PANDASAI_AVAILABLE = True
+except ImportError:  # pandasai is not a declared dependency; install manually on Python 3.11
+    _PANDASAI_AVAILABLE = False
 
 from analytics import categorize_product, generate_insights, generate_report, predict_stock_needs
 from config import (  # ensure configuration is loaded
@@ -146,9 +151,14 @@ st.markdown('<h2>Plotting Parameters</h2>', unsafe_allow_html=True)
 user_prompt = st.text_area("Enter your plot prompt:")
 
 if st.button("Plot Parameters"):
-    if user_prompt:
+    if not _PANDASAI_AVAILABLE:
+        st.warning(
+            "AI-powered plotting is unavailable: pandasai requires pandas==1.5.3, "
+            "which is incompatible with this project's pandas>=2.1.0 requirement."
+        )
+    elif user_prompt:
         df_full = read_sql_query("SELECT * FROM PRODUCT", db_path)
-        agent = Agent()
+        agent = _PandasAIAgent()
         response = agent.chat({"user_prompt": user_prompt, "df": df_full})
         st.pyplot(response)
     else:

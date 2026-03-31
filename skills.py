@@ -4,10 +4,14 @@ skills.py
 This module defines additional skills for the AI agent, such as plotting parameters from the data.
 """
 
-from pandasai.skills import skill
+try:
+    from pandasai.skills import skill as _skill
+except ImportError:  # pandasai is not a declared dependency; install manually on Python 3.11
+    def _skill(fn):  # no-op decorator so the module loads without pandasai
+        return fn
 
 
-@skill
+@_skill
 def plot_parameter(parameter1, parameter2, df):
     """
     Displays a bar chart comparing two parameters from the dataframe.
