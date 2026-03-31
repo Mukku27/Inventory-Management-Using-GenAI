@@ -37,11 +37,38 @@ CREATE TABLE IF NOT EXISTS {PRODUCT_TABLE} (
 );
 """
 
+# Ordered migration steps: (version, sql).
+# To evolve the schema append a new tuple with the next version number and
+# forward-only SQL (ALTER TABLE, CREATE INDEX, etc.). Never edit or remove an
+# existing entry — that would break databases already at that version.
+_MIGRATIONS: list[tuple[int, str]] = [
+    (1, CREATE_PRODUCT_TABLE_SQL),
+]
+
 
 def get_connection(db_path: str | Path = DATABASE_PATH) -> sqlite3.Connection:
     """Return a SQLite connection for the configured product database."""
 
     return sqlite3.connect(str(db_path))
+
+
+def _get_schema_version(connection: sqlite3.Connection) -> int:
+    """Return the current schema version stored in the database.
+
+    Returns 0 for databases that pre-date the versioning system so that all
+    migrations are applied on the next ``ensure_schema`` call.
+    """
+
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS _schema_version (version INTEGER NOT NULL)"
+    )
+    row = connection.execute("SELECT MAX(version) FROM _schema_version").fetchone()
+    return row[0] if row[0] is not None else 0
+
+
+def _set_schema_version(connection: sqlite3.Connection, version: int) -> None:
+    connection.execute("DELETE FROM _schema_version")
+    connection.execute("INSERT INTO _schema_version (version) VALUES (?)", (version,))
 
 
 def validate_product_schema(db_path: str | Path = DATABASE_PATH) -> None:
@@ -146,14 +173,49 @@ def generate_product_data(num_products: int) -> list[tuple]:
     return product_data
 
 
-def initialize_database(db_path: str | Path = DATABASE_PATH, num_products: int = 10000) -> None:
-    """Create the sample PRODUCT table and populate it with generated rows."""
+def ensure_schema(db_path: str | Path = DATABASE_PATH) -> None:
+    """Apply any pending schema migrations in version order.
+
+    Safe to call on every application startup: it is non-destructive and
+    idempotent. Existing rows are never touched. Future schema changes should
+    be added as new entries in ``_MIGRATIONS`` rather than editing old ones.
+    """
+
+    with get_connection(db_path) as connection:
+        current_version = _get_schema_version(connection)
+        for version, sql in _MIGRATIONS:
+            if version > current_version:
+                connection.execute(sql)
+                _set_schema_version(connection, version)
+
+
+def seed_database(
+    db_path: str | Path = DATABASE_PATH,
+    num_products: int = 10000,
+    *,
+    force: bool = False,
+) -> None:
+    """Populate the PRODUCT table with generated demo rows.
+
+    This is an explicit, opt-in step — it must not be called automatically
+    during schema bootstrap. By default the function is a no-op when the
+    table already contains rows, preventing accidental duplication on repeated
+    invocations. Pass ``force=True`` to insert rows regardless.
+
+    Must be called after ``ensure_schema``.
+    """
+
+    with get_connection(db_path) as connection:
+        if not force:
+            existing = connection.execute(
+                f"SELECT COUNT(*) FROM {PRODUCT_TABLE}"
+            ).fetchone()[0]
+            if existing > 0:
+                return
 
     product_data = generate_product_data(num_products)
     with get_connection(db_path) as connection:
         cursor = connection.cursor()
-        cursor.execute("DROP TABLE IF EXISTS PRODUCT")
-        cursor.execute(CREATE_PRODUCT_TABLE_SQL)
         cursor.executemany(
             f"""
             INSERT INTO {PRODUCT_TABLE}
@@ -162,6 +224,20 @@ def initialize_database(db_path: str | Path = DATABASE_PATH, num_products: int =
             """,
             product_data,
         )
+
+
+def initialize_database(db_path: str | Path = DATABASE_PATH, num_products: int = 10000) -> None:
+    """Ensure the PRODUCT table schema is present.
+
+    Applies any pending migrations via ``ensure_schema``. Demo-data seeding is
+    intentionally **not** part of bootstrap; call ``seed_database`` explicitly
+    when sample rows are needed (e.g. on a fresh installation).
+
+    ``num_products`` is accepted for API compatibility but is ignored here;
+    pass it directly to ``seed_database`` when seeding.
+    """
+
+    ensure_schema(db_path)
 
 
 def print_sample_rows(db_path: str | Path = DATABASE_PATH, limit: int = 10) -> None:
@@ -175,6 +251,37 @@ def print_sample_rows(db_path: str | Path = DATABASE_PATH, limit: int = 10) -> N
 
 
 if __name__ == "__main__":
-    initialize_database()
-    print_sample_rows()
-    print(f"\nSuccessfully created a product inventory database at {DATABASE_PATH}.")
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Inventory database management — schema migration and demo-data seeding."
+    )
+    parser.add_argument(
+        "--seed",
+        action="store_true",
+        help=(
+            "Populate the PRODUCT table with generated demo rows. "
+            "Skipped automatically when rows already exist; use --force-seed to override."
+        ),
+    )
+    parser.add_argument(
+        "--force-seed",
+        action="store_true",
+        help="Seed demo rows even when the table already contains data (implies --seed).",
+    )
+    parser.add_argument(
+        "--seed-count",
+        type=int,
+        default=10000,
+        metavar="N",
+        help="Number of demo rows to generate (default: 10 000). Requires --seed or --force-seed.",
+    )
+    args = parser.parse_args()
+
+    ensure_schema()
+    print(f"Schema is up to date at {DATABASE_PATH}.")
+
+    if args.seed or args.force_seed:
+        seed_database(num_products=args.seed_count, force=args.force_seed)
+        print_sample_rows()
+        print(f"Demo data loaded into {DATABASE_PATH}.")
