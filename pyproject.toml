@@ -11,19 +11,24 @@ license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
     "streamlit>=1.35",
-    "pandas==1.5.3",
+    "pandas>=2.1.0",
     "python-dotenv>=1.0",
     "google-generativeai>=0.7",
     "plotly>=5.0",
     "openpyxl>=3.1",
-    "pandasai>=1.5,<2",
 ]
+
+# NOTE: pandasai is intentionally excluded from the install extras.
+# Every pandasai 1.x release pins pandas==1.5.3, which conflicts with the
+# pandas>=2.1.0 required here and has no Python 3.12+ wheels. The plotting
+# feature in app.py degrades gracefully when pandasai is absent.
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8,<10",
     "ruff>=0.4",
     "pip-audit>=2.7",
+    "pip-tools>=7",
 ]
 
 [tool.setuptools]
