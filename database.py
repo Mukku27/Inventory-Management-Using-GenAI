@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 DATABASE_PATH = Path(__file__).with_name("product_inventory.db")
@@ -37,15 +38,6 @@ CREATE TABLE IF NOT EXISTS {PRODUCT_TABLE} (
 );
 """
 
-# Ordered migration steps: (version, sql).
-# To evolve the schema append a new tuple with the next version number and
-# forward-only SQL (ALTER TABLE, CREATE INDEX, etc.). Never edit or remove an
-# existing entry — that would break databases already at that version.
-_MIGRATIONS: list[tuple[int, str]] = [
-    (1, CREATE_PRODUCT_TABLE_SQL),
-]
-
-
 def get_connection(db_path: str | Path = DATABASE_PATH) -> sqlite3.Connection:
     """Return a SQLite connection for the configured product database."""
 
@@ -71,23 +63,19 @@ def _set_schema_version(connection: sqlite3.Connection, version: int) -> None:
     connection.execute("INSERT INTO _schema_version (version) VALUES (?)", (version,))
 
 
-def validate_product_schema(db_path: str | Path = DATABASE_PATH) -> None:
-    """Raise a helpful error when the PRODUCT table schema does not match the app."""
+def _product_table_exists(connection: sqlite3.Connection) -> bool:
+    row = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (PRODUCT_TABLE,),
+    ).fetchone()
+    return row is not None
 
-    with get_connection(db_path) as connection:
-        cursor = connection.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (PRODUCT_TABLE,),
-        )
-        if cursor.fetchone() is None:
-            raise RuntimeError(
-                f"{db_path} does not contain the required {PRODUCT_TABLE} table."
-            )
 
-        cursor.execute(f"PRAGMA table_info({PRODUCT_TABLE})")
-        actual_columns = [row[1] for row in cursor.fetchall()]
+def _get_product_columns(connection: sqlite3.Connection) -> list[str]:
+    return [row[1] for row in connection.execute(f"PRAGMA table_info({PRODUCT_TABLE})").fetchall()]
 
+
+def _raise_for_missing_columns(actual_columns: list[str]) -> None:
     missing_columns = [column for column in PRODUCT_REQUIRED_COLUMNS if column not in actual_columns]
     if missing_columns:
         raise RuntimeError(
@@ -95,6 +83,45 @@ def validate_product_schema(db_path: str | Path = DATABASE_PATH) -> None:
             f"Missing columns: {', '.join(missing_columns)}. "
             f"Expected columns: {', '.join(PRODUCT_REQUIRED_COLUMNS)}."
         )
+
+
+def _ensure_product_table_matches_current_schema(connection: sqlite3.Connection) -> None:
+    """Create or repair the PRODUCT table so it matches the current schema."""
+
+    if not _product_table_exists(connection):
+        connection.execute(CREATE_PRODUCT_TABLE_SQL)
+        return
+
+    actual_columns = _get_product_columns(connection)
+    if INVENTORY_VALUE_COLUMN not in actual_columns and "QUANTITY" in actual_columns:
+        connection.execute(
+            f"ALTER TABLE {PRODUCT_TABLE} RENAME COLUMN QUANTITY TO {INVENTORY_VALUE_COLUMN}"
+        )
+        actual_columns = _get_product_columns(connection)
+
+    _raise_for_missing_columns(actual_columns)
+
+
+# Ordered migration steps: (version, function).
+# To evolve the schema append a new tuple with the next version number and a
+# forward-only migration function. Never edit or remove an existing entry —
+# that would break databases already at that version.
+_MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
+    (1, _ensure_product_table_matches_current_schema),
+]
+
+
+def validate_product_schema(db_path: str | Path = DATABASE_PATH) -> None:
+    """Raise a helpful error when the PRODUCT table schema does not match the app."""
+
+    with get_connection(db_path) as connection:
+        if not _product_table_exists(connection):
+            raise RuntimeError(
+                f"{db_path} does not contain the required {PRODUCT_TABLE} table."
+            )
+        actual_columns = _get_product_columns(connection)
+
+    _raise_for_missing_columns(actual_columns)
 
 
 def _build_fake() -> object:
@@ -183,10 +210,16 @@ def ensure_schema(db_path: str | Path = DATABASE_PATH) -> None:
 
     with get_connection(db_path) as connection:
         current_version = _get_schema_version(connection)
-        for version, sql in _MIGRATIONS:
+        for version, migration in _MIGRATIONS:
             if version > current_version:
-                connection.execute(sql)
+                migration(connection)
                 _set_schema_version(connection, version)
+                current_version = version
+
+        # Repair known legacy layouts even if version metadata was previously
+        # advanced before the underlying table was actually upgraded.
+        if current_version > 0:
+            _ensure_product_table_matches_current_schema(connection)
 
 
 def seed_database(

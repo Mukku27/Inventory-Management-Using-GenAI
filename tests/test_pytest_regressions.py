@@ -111,6 +111,84 @@ def test_ensure_schema_is_idempotent(tmp_path: Path):
     database.validate_product_schema(db_path)
 
 
+def test_ensure_schema_migrates_legacy_quantity_column(tmp_path: Path):
+    db_path = tmp_path / "legacy_quantity.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE PRODUCT (
+                ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                NAME TEXT,
+                CATEGORY TEXT,
+                BRAND TEXT,
+                PRICE REAL,
+                QUANTITY INTEGER,
+                SIZE TEXT,
+                COLOR TEXT,
+                WEIGHT REAL,
+                SPECIFICATIONS TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO PRODUCT
+            (NAME, CATEGORY, BRAND, PRICE, QUANTITY, SIZE, COLOR, WEIGHT, SPECIFICATIONS)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("Widget", "Gadgets", "Acme", 9.99, 12, "M", "Blue", 1.2, "Original widget"),
+        )
+
+    database.ensure_schema(db_path)
+    database.validate_product_schema(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(PRODUCT)").fetchall()]
+        migrated_row = connection.execute(
+            "SELECT NAME, PRICE, STOCK FROM PRODUCT"
+        ).fetchone()
+        schema_version = connection.execute(
+            "SELECT MAX(version) FROM _schema_version"
+        ).fetchone()[0]
+
+    assert "QUANTITY" not in columns
+    assert database.INVENTORY_VALUE_COLUMN in columns
+    assert migrated_row == ("Widget", 9.99, 12)
+    assert schema_version == 1
+
+
+def test_ensure_schema_repairs_legacy_schema_even_with_stale_version_metadata(tmp_path: Path):
+    db_path = tmp_path / "stale_version.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE PRODUCT (
+                ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                NAME TEXT,
+                CATEGORY TEXT,
+                BRAND TEXT,
+                PRICE REAL,
+                QUANTITY INTEGER,
+                SIZE TEXT,
+                COLOR TEXT,
+                WEIGHT REAL,
+                SPECIFICATIONS TEXT
+            )
+            """
+        )
+        connection.execute("CREATE TABLE _schema_version (version INTEGER NOT NULL)")
+        connection.execute("INSERT INTO _schema_version (version) VALUES (1)")
+
+    database.ensure_schema(db_path)
+    database.validate_product_schema(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(PRODUCT)").fetchall()]
+
+    assert "QUANTITY" not in columns
+    assert database.INVENTORY_VALUE_COLUMN in columns
+
+
 def test_seed_database_populates_rows(monkeypatch, tmp_path: Path):
     seeded_rows = [
         ("Widget", "Gadgets", "Acme", 9.99, 12, "M", "Blue", 1.2, "Original widget"),

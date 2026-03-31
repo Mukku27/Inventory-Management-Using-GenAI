@@ -72,6 +72,7 @@ class AppSourceTests(unittest.TestCase):
         self.assertIn("validate_product_schema", app_source)
         self.assertIn("INVENTORY_VALUE_COLUMN", app_source)
         self.assertIn("PRODUCT_TABLE", app_source)
+        self.assertIn("COALESCE(SUM(price *", app_source)
         self.assertNotIn("db_path = 'inventory.db'", app_source)
         self.assertNotIn("quantity", app_source.lower())
 

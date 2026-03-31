@@ -125,7 +125,7 @@ except RuntimeError as exc:
 
 query = (
     f"SELECT COUNT(*) as product_count, "
-    f"SUM(price * {INVENTORY_VALUE_COLUMN}) as total_inventory_value "
+    f"COALESCE(SUM(price * {INVENTORY_VALUE_COLUMN}), 0) as total_inventory_value "
     f"FROM {PRODUCT_TABLE}"
 )
 df = read_sql_query(query, db_path)
