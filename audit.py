@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
 AUDIT_LOG_FILENAME = "ai_operation_audit.jsonl"
+AUDIT_LOG_WARN_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
 def _to_json_safe(value: Any) -> Any:
@@ -31,14 +33,24 @@ def get_audit_log_path(db_path: str | Path) -> Path:
 def append_audit_event(db_path: str | Path, event_type: str, details: Mapping[str, Any]) -> Path:
     """Append a structured audit event to the JSONL log.
 
-    Note: the log file grows without bound. Log rotation and size limits are
-    intentionally deferred for the MVP. Add rotation (e.g. via
-    logging.handlers.RotatingFileHandler or a periodic cron job) before
-    deploying to a long-running production environment.
+    Emits a :class:`UserWarning` when the log file exceeds
+    ``AUDIT_LOG_WARN_BYTES`` (100 MB). The write still succeeds — the warning
+    is a safety valve to surface runaway growth before it exhausts disk space.
+    Full log rotation is deferred for a future iteration.
     """
 
     audit_path = get_audit_log_path(db_path)
     audit_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if audit_path.exists() and audit_path.stat().st_size >= AUDIT_LOG_WARN_BYTES:
+        warnings.warn(
+            f"Audit log {audit_path} has reached "
+            f"{audit_path.stat().st_size / (1024 * 1024):.1f} MB. "
+            "Consider archiving or rotating it to avoid disk exhaustion.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     event = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event_type": str(event_type),

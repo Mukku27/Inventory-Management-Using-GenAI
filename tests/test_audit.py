@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
-from audit import append_audit_event, get_audit_log_path
+from audit import AUDIT_LOG_WARN_BYTES, append_audit_event, get_audit_log_path
 from prompt import (
     COLUMN_MAPPING_PROMPT_NAME,
     COLUMN_MAPPING_PROMPT_VERSION,
@@ -54,6 +55,34 @@ def test_build_column_mapping_prompt_contains_columns():
     assert "PRICE" in prompt
     assert COLUMN_MAPPING_PROMPT_NAME  # constant must remain non-empty for audit use
     assert COLUMN_MAPPING_PROMPT_VERSION
+
+
+def test_append_audit_event_warns_when_log_exceeds_size_limit(tmp_path: Path):
+    db_path = tmp_path / "inventory.db"
+    db_path.write_text("", encoding="utf-8")
+    audit_path = get_audit_log_path(db_path)
+
+    # Pre-create a log file that is exactly at the threshold.
+    audit_path.write_bytes(b"x" * AUDIT_LOG_WARN_BYTES)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        append_audit_event(db_path, "test_event", {"key": "value"})
+
+    assert len(caught) == 1
+    assert issubclass(caught[0].category, UserWarning)
+    assert "100.0 MB" in str(caught[0].message)
+
+
+def test_append_audit_event_no_warning_below_size_limit(tmp_path: Path):
+    db_path = tmp_path / "inventory.db"
+    db_path.write_text("", encoding="utf-8")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        append_audit_event(db_path, "test_event", {"key": "value"})
+
+    assert len(caught) == 0
 
 
 def test_map_columns_uses_versioned_prompt_builder():
