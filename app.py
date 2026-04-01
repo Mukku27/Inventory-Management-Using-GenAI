@@ -243,9 +243,9 @@ if st.button("Generate SQL Query"):
             "(ID INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT, STOCK INTEGER, PRICE REAL, CATEGORY TEXT)"
         )
         sql_query = generate_sql_query(db_description, question)
-        st.write("Generated SQL Query:", sql_query)
         try:
             validated_sql = validate_read_only_sql(sql_query, allowed_tables=(PRODUCT_TABLE,))
+            st.write("Generated SQL Query:", validated_sql)
             result_df = read_sql_query(validated_sql, db_path)
             append_audit_event(
                 db_path,
@@ -312,7 +312,8 @@ else:
                 f"The '{action}' action changes or removes existing inventory rows."
             )
             approve_destructive_action = st.checkbox(
-                f"Approve the '{action}' action for this import"
+                f"Approve the '{action}' action for this import",
+                key=f"approve_destructive_{action}",
             )
         if import_preview["proposed_new_columns"]:
             st.warning(
@@ -321,7 +322,8 @@ else:
                 )
             )
             approve_schema_changes = st.checkbox(
-                "Approve these schema changes for this import"
+                "Approve these schema changes for this import",
+                key=f"approve_schema_{action}",
             )
     except Exception as exc:
         append_audit_event(
