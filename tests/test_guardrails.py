@@ -9,6 +9,8 @@ from guardrails import (
     _strip_string_literals,
     enforce_destructive_action_policy,
     enforce_schema_change_policy,
+    normalize_identifier,
+    quote_identifier,
     review_column_mappings,
     validate_read_only_sql,
 )
@@ -149,3 +151,87 @@ def test_schema_changes_require_explicit_approval():
 def test_destructive_excel_actions_require_explicit_approval():
     with pytest.raises(DestructiveActionApprovalRequired, match="REMOVE"):
         enforce_destructive_action_policy("remove", allow_destructive_actions=False)
+
+
+def test_validate_read_only_sql_blocks_empty_sql():
+    with pytest.raises(SqlGuardrailViolation, match="did not return"):
+        validate_read_only_sql("", allowed_tables=("PRODUCT",))
+
+
+def test_validate_read_only_sql_blocks_whitespace_only():
+    with pytest.raises(SqlGuardrailViolation, match="did not return"):
+        validate_read_only_sql("   ", allowed_tables=("PRODUCT",))
+
+
+def test_validate_read_only_sql_blocks_exceeding_max_length():
+    long_sql = "SELECT * FROM PRODUCT WHERE NAME = '" + "A" * 100_001 + "'"
+    with pytest.raises(SqlGuardrailViolation, match="maximum allowed length"):
+        validate_read_only_sql(long_sql, allowed_tables=("PRODUCT",))
+
+
+def test_validate_read_only_sql_blocks_schema_qualified_table():
+    with pytest.raises(SqlGuardrailViolation, match="disallowed tables"):
+        validate_read_only_sql(
+            "SELECT * FROM main.sqlite_master",
+            allowed_tables=("PRODUCT",),
+        )
+
+
+def test_validate_read_only_sql_allows_schema_qualified_allowed_table():
+    sql = validate_read_only_sql(
+        "SELECT * FROM main.PRODUCT",
+        allowed_tables=("PRODUCT",),
+    )
+    assert sql
+
+
+def test_validate_read_only_sql_blocks_attach_database():
+    with pytest.raises(SqlGuardrailViolation, match="read-only"):
+        validate_read_only_sql(
+            "ATTACH DATABASE ':memory:' AS other",
+            allowed_tables=("PRODUCT",),
+        )
+
+
+def test_strip_string_literals_handles_backtick_quoted_identifiers():
+    assert _strip_string_literals("SELECT `DELETE` FROM t") == 'SELECT "" FROM t'
+    assert _strip_string_literals("SELECT `col--name` FROM t") == 'SELECT "" FROM t'
+
+
+def test_validate_read_only_sql_allows_backtick_quoted_keyword_as_identifier():
+    sql = validate_read_only_sql(
+        "SELECT `DELETE` FROM PRODUCT",
+        allowed_tables=("PRODUCT",),
+    )
+    assert sql
+
+
+def test_validate_read_only_sql_with_empty_allowed_tables():
+    with pytest.raises(SqlGuardrailViolation, match="disallowed tables"):
+        validate_read_only_sql(
+            "SELECT * FROM PRODUCT",
+            allowed_tables=(),
+        )
+
+
+def test_validate_read_only_sql_semicolon_inside_string_literal():
+    sql = validate_read_only_sql(
+        "SELECT * FROM PRODUCT WHERE NAME = 'a;b'",
+        allowed_tables=("PRODUCT",),
+    )
+    assert sql
+
+
+def test_normalize_identifier_strips_special_chars():
+    assert normalize_identifier("hello world!") == "HELLO_WORLD"
+    assert normalize_identifier("---") == ""
+    assert normalize_identifier("col 1") == "COL_1"
+
+
+def test_quote_identifier_rejects_empty():
+    with pytest.raises(Exception):
+        quote_identifier("---")
+
+
+def test_quote_identifier_normalizes_and_quotes():
+    assert quote_identifier("my column") == '"MY_COLUMN"'
