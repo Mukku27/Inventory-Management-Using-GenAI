@@ -6,8 +6,6 @@ handles user inputs, and calls functions from other modules to execute the core 
 """
 
 
-import hashlib
-
 import streamlit as st
 
 try:
@@ -60,16 +58,6 @@ def _get_uploaded_file_signature(uploaded_file) -> str | None:
     size = getattr(uploaded_file, "size", None)
     if size is not None:
         return f"{name}:{size}"
-
-    # Fallback for file-like objects without a size attribute.
-    if hasattr(uploaded_file, "getvalue"):
-        payload = uploaded_file.getvalue()
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
-        if isinstance(payload, str):
-            payload = payload.encode("utf-8")
-        if isinstance(payload, (bytes, bytearray)):
-            return f"{name}:{hashlib.sha256(payload).hexdigest()}"
 
     return f"{name}:"
 
