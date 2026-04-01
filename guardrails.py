@@ -105,7 +105,17 @@ def quote_identifier(value: str) -> str:
 
 
 def _strip_string_literals(sql: str) -> str:
-    return re.sub(r"'(?:''|[^'])*'", "''", sql)
+    # Strip single-quoted string values ('it''s a value') so that keywords or
+    # comment markers embedded in string data do not confuse the scanners.
+    sql = re.sub(r"'(?:''|[^'])*'", "''", sql)
+    # Strip double-quoted identifiers ("col--name", "DELETE" as alias) for the
+    # same reason. In SQLite double quotes delimit identifiers, not strings, but
+    # AI-generated SQL may use them as string literals, and in either case their
+    # *content* should not be scanned for forbidden keywords or comment markers.
+    # The "" escape for a literal double-quote inside a double-quoted identifier
+    # mirrors the '' escape used by single-quoted strings.
+    sql = re.sub(r'"(?:""|[^"])*"', '""', sql)
+    return sql
 
 
 def _matches_keyword(sql: str, start: int, keyword: str) -> bool:
