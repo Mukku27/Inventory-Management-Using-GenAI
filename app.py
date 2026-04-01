@@ -59,7 +59,9 @@ def _get_uploaded_file_signature(uploaded_file) -> str | None:
     if size is not None:
         return f"{name}:{size}"
 
-    return f"{name}:"
+    # Cannot build a reliable key without size — signal to the caller that
+    # this file is uncacheable rather than returning a collision-prone string.
+    return None
 
 
 def _clear_cached_import_preview() -> None:
@@ -70,18 +72,20 @@ def _get_cached_import_preview(uploaded_file, db_path):
     cache_key = _get_uploaded_file_signature(uploaded_file)
     cached_preview = st.session_state.get(IMPORT_PREVIEW_STATE_KEY)
     if (
-        cached_preview
+        cache_key is not None
+        and cached_preview
         and cached_preview.get("cache_key") == cache_key
         and cached_preview.get("db_path") == db_path
     ):
         return cached_preview["preview"]
 
     preview = preview_excel_import(uploaded_file, db_path, emit_audit_event=True)
-    st.session_state[IMPORT_PREVIEW_STATE_KEY] = {
-        "cache_key": cache_key,
-        "db_path": db_path,
-        "preview": preview,
-    }
+    if cache_key is not None:
+        st.session_state[IMPORT_PREVIEW_STATE_KEY] = {
+            "cache_key": cache_key,
+            "db_path": db_path,
+            "preview": preview,
+        }
     return preview
 
 # Set up Streamlit page configuration
