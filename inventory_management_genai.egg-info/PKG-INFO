@@ -1,0 +1,121 @@
+Metadata-Version: 2.4
+Name: inventory-management-genai
+Version: 0.1.0
+Summary: Inventory Management application powered by Generative AI
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: streamlit>=1.35
+Requires-Dist: pandas>=2.1.0
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: google-generativeai>=0.7
+Requires-Dist: plotly>=5.0
+Requires-Dist: openpyxl>=3.1
+Provides-Extra: dev
+Requires-Dist: pytest<10,>=8; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"
+Requires-Dist: pip-audit>=2.7; extra == "dev"
+Requires-Dist: pip-tools>=7; extra == "dev"
+Dynamic: license-file
+
+# Inventory Management using GenAI
+
+This project demonstrates an innovative approach to inventory management leveraging Generative AI.  It integrates a Streamlit web application, a SQLite database, and Google's Gemini Pro AI model for an intuitive, AI-powered inventory management interface.
+
+## Features
+
+- **Natural Language Queries:**  Ask questions about your inventory using plain English.
+- **AI-Powered SQL Generation:**  Converts natural language queries into SQL using Google's Gemini Pro.
+- **Interactive Dashboard:** Visualizes inventory data with dynamic charts and graphs.
+- **Inventory Modification:** Add, remove, or update products via natural language commands or Excel file uploads.
+- **Bulk Data Processing:** Upload Excel files for batch inventory updates.
+- **Automated Insights:** Generates insights based on sales and trends.
+- **Stock Prediction:** Predicts product demand using AI.
+- **Report Generation:** Creates comprehensive reports based on the database.
+- **Customizable Plotting:** Allows users to generate plots based on their specified parameters, enabling non-technical users to perform basic data analysis.
+
+
+## Files in the Repository
+
+1. `app.py`: The main Streamlit application handling user interface and AI interactions.
+2. `database.py`:  Initializes and populates the SQLite database with sample product data.
+3. `analytics.py`: Contains functions for AI-powered inventory analysis (insights, predictions, categorization, reporting).
+4. `excel_processing.py`: Handles processing of uploaded Excel files for database updates.
+5. `config.py`: Loads environment variables and configures API keys.
+6. `prompt.py`: (Assumed file - not present in provided code) Contains functions related to prompt engineering for the AI models.
+7. `utils.py`: (Assumed file - not present in provided code) Contains utility functions used throughout the application.
+
+
+## Setup and Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository_url>
+   cd inventory-management-using-GenAI
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   python3.11 -m venv .venv
+   source .venv/bin/activate
+   pip install .
+   ```
+
+   The dependency set is verified on Python 3.11 and is managed through `pyproject.toml`. `sqlite3` is included with Python's standard library and does not need to be installed separately.
+
+   > **Developers/contributors:** use `pip install -e ".[dev]"` instead to get an editable install with `pytest`, `ruff`, and `pip-audit`.
+
+3. **Set up API keys:**
+   - Create a `.env` file in the project root.
+   - Add your Google Cloud API key: `GOOGLE_API_KEY=your_api_key_here`
+   - Obtain a PandasAI API key from [www.pandabi.com](www.pandabi.com) and add it: `PANDASAI_API_KEY=your_api_key_here`
+   - If either key is missing, the app will still start and show a warning, but the related AI features will remain unavailable until configured.
+
+4. **Initialize the database:**
+   ```bash
+   python database.py
+   ```
+
+5. **Run the Streamlit app:**
+   ```bash
+   streamlit run app.py
+   ```
+
+## Usage
+
+The application provides these main functionalities:
+
+1. **Ask Questions:** Input natural language queries to retrieve inventory information.
+2. **View Dashboard:** Access interactive dashboards displaying key inventory metrics.
+3. **Modify Inventory:**  Add, remove, or modify products using natural language or Excel file uploads.
+4. **Generate Insights/Predictions/Reports:** Utilize AI-powered functions to gain deeper insights into your inventory.
+5. **Plot Parameters:** Create custom plots to visualize your data.
+
+
+## Dependencies
+
+- streamlit
+- pandas
+- python-dotenv
+- google-generativeai
+- pandasai
+- plotly
+- faker
+
+`sqlite3` is included with Python's standard library and does not need to be installed with `pip`.
+
+
+## Contributing
+
+Contributions are welcome!  Follow these steps:
+
+1. Fork the repository.
+2. Create a new branch for your feature.
+3. Commit your changes.
+4. Push to the branch.
+5. Create a pull request.
+
+## License
+
+This project is licensed under the MIT License - see the `LICENSE` file for details.
