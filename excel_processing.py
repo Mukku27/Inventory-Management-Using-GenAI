@@ -17,7 +17,7 @@ from guardrails import (
     review_column_mappings,
 )
 from prompt import get_column_mapping_prompt_metadata, get_gemini_response
-from utils import add_column_to_db, map_columns
+from utils import add_column_to_db, map_columns, _normalize_identifier
 
 
 def _read_excel_frame(uploaded_file):
@@ -100,14 +100,31 @@ def process_excel_file(
             allow_schema_changes=allow_schema_changes,
         )
 
-        for db_col in preview["proposed_new_columns"]:
-            add_column_to_db(db_path, db_col)
-
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
 
+            # Add new columns within the same connection/transaction so that
+            # a failure during row processing does not leave the database with
+            # orphan columns added by a separate connection.
+            existing = {_normalize_identifier(name): name for name in preview["existing_columns"]}
+            for db_col in preview["proposed_new_columns"]:
+                normalized = _normalize_identifier(db_col)
+                if normalized not in existing:
+                    col_type = "TEXT"
+                    if normalized in {"ID", "STOCK", "QUANTITY", "COUNT"}:
+                        col_type = "INTEGER"
+                    elif normalized in {"PRICE", "WEIGHT", "COST", "AMOUNT"}:
+                        col_type = "REAL"
+                    cursor.execute(f'ALTER TABLE PRODUCT ADD COLUMN "{normalized}" {col_type}')
+                    existing[normalized] = normalized
+
             # Process each row in the Excel file
             for _, row in df.iterrows():
+                unmapped = [str(col) for col in row.keys() if str(col) not in column_mappings]
+                if unmapped:
+                    raise ValueError(
+                        f"AI column mapping is incomplete — no mapping for: {', '.join(unmapped)}"
+                    )
                 mapped_row = {column_mappings[str(col)]: value for col, value in row.items()}
 
                 if "NAME" not in mapped_row:
