@@ -89,7 +89,6 @@ def excel_processing_module(monkeypatch):
     # upper-cased equivalent (matching the PRODUCT schema convention) without
     # calling Gemini or the heuristic logic.
     monkeypatch.setattr(module, "map_columns", lambda cols, existing, fn: {c: c.upper() for c in cols})
-    monkeypatch.setattr(module, "add_column_to_db", lambda *args, **kwargs: None)
 
     return module
 

@@ -17,7 +17,7 @@ from guardrails import (
     review_column_mappings,
 )
 from prompt import get_column_mapping_prompt_metadata, get_gemini_response
-from utils import add_column_to_db, map_columns, _normalize_identifier
+from utils import _normalize_identifier, map_columns
 
 
 def _read_excel_frame(uploaded_file):
