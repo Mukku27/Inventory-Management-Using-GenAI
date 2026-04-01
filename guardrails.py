@@ -119,6 +119,11 @@ def _strip_string_literals(sql: str) -> str:
     # The "" escape for a literal double-quote inside a double-quoted identifier
     # mirrors the '' escape used by single-quoted strings.
     sql = re.sub(r'"(?:""|[^"])*"', '""', sql)
+    # Strip backtick-quoted identifiers (`col-name`, `DELETE`). SQLite accepts
+    # backticks as an identifier quoting mechanism (MySQL compatibility). Without
+    # this, keywords inside backtick-quoted identifiers cause false positives,
+    # and backtick-quoted table names could bypass the allowlist check.
+    sql = re.sub(r'`[^`]*`', '""', sql)
     return sql
 
 
@@ -142,6 +147,7 @@ def _has_top_level_comma_join(sql: str) -> bool:
         "INTERSECT",
         "HAVING",
         "WINDOW",
+        "ON",
     )
     depth = 0
     in_from_clause = False
@@ -218,7 +224,7 @@ def validate_read_only_sql(sql: str, allowed_tables: Iterable[str]) -> str:
         raise SqlGuardrailViolation("SQL comments are not allowed in AI-generated queries.")
 
     stripped = candidate.rstrip()
-    if ";" in stripped.rstrip(";"):
+    if ";" in _strip_string_literals(stripped).rstrip(";"):
         raise SqlGuardrailViolation("Only a single SQL statement may be executed.")
     candidate = stripped.rstrip(";").strip()
 
@@ -240,10 +246,19 @@ def validate_read_only_sql(sql: str, allowed_tables: Iterable[str]) -> str:
 
     allowed_table_names = {normalize_identifier(table) for table in allowed_tables}
     cte_names = _extract_cte_names(normalized)
-    referenced_tables = {
-        match.group(1)
-        for match in re.finditer(r"\b(?:FROM|JOIN)\s+([A-Z_][A-Z0-9_]*)", normalized)
-    }
+    referenced_tables = set()
+    for match in re.finditer(
+        r"\b(?:FROM|JOIN)\s+(?:[A-Z_][A-Z0-9_]*\.)?([A-Z_][A-Z0-9_]*)", normalized
+    ):
+        referenced_tables.add(match.group(1))
+        # Also capture the schema prefix (if any) to detect schema-qualified
+        # references like main.sqlite_master where the *table* part is the
+        # security-relevant identifier.
+    # Detect schema-qualified references and include them for the allowlist check.
+    for match in re.finditer(
+        r"\b(?:FROM|JOIN)\s+([A-Z_][A-Z0-9_]*)\.([A-Z_][A-Z0-9_]*)", normalized
+    ):
+        referenced_tables.add(match.group(2))
     external_tables = referenced_tables - cte_names
     if not external_tables:
         raise SqlGuardrailViolation("AI-generated SQL must read from an approved inventory table.")
@@ -269,7 +284,7 @@ def review_column_mappings(
         for column in existing_columns
     }
     sanitized_mapping: dict[str, str] = {}
-    proposed_new_columns: list[str] = []
+    seen_new_columns: dict[str, None] = {}
 
     for excel_column, raw_column in column_mappings.items():
         normalized = normalize_identifier(raw_column)
@@ -283,12 +298,12 @@ def review_column_mappings(
             )
 
         sanitized_mapping[str(excel_column)] = existing_lookup.get(normalized, normalized)
-        if normalized not in existing_lookup and normalized not in proposed_new_columns:
-            proposed_new_columns.append(normalized)
+        if normalized not in existing_lookup and normalized not in seen_new_columns:
+            seen_new_columns[normalized] = None
 
     return ColumnMappingReview(
         sanitized_mapping=sanitized_mapping,
-        proposed_new_columns=tuple(proposed_new_columns),
+        proposed_new_columns=tuple(seen_new_columns),
     )
 
 
