@@ -183,10 +183,14 @@ def _has_top_level_comma_join(sql: str) -> bool:
 
 
 def _extract_cte_names(sql: str) -> set[str]:
+    # (?:\s+RECURSIVE)? handles WITH RECURSIVE CTEs (SQLite supports them).
+    # Without this, "RECURSIVE" would be captured as the CTE name and the real
+    # name would be missed, causing the validator to treat the recursive
+    # self-reference as an unauthorised external table.
     return {
         match.group(1)
         for match in re.finditer(
-            r"(?:\bWITH\b|,)\s*([A-Z_][A-Z0-9_]*)\s*(?:\([^)]*\))?\s+AS\s*\(",
+            r"(?:\bWITH\b(?:\s+RECURSIVE)?|,)\s*([A-Z_][A-Z0-9_]*)\s*(?:\([^)]*\))?\s+AS\s*\(",
             sql,
         )
     }

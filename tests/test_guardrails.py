@@ -61,6 +61,38 @@ def test_validate_read_only_sql_blocks_unquoted_forbidden_keyword():
         )
 
 
+def test_validate_read_only_sql_allows_recursive_cte():
+    # WITH RECURSIVE: the CTE name must be extracted so the self-reference
+    # inside the recursive body is not treated as an external table.
+    sql = validate_read_only_sql(
+        """
+        WITH RECURSIVE counter(n) AS (
+            SELECT 1
+            UNION ALL
+            SELECT n + 1 FROM counter WHERE n < 5
+        )
+        SELECT p.NAME, c.n FROM PRODUCT p JOIN counter c ON 1 = 1
+        """,
+        allowed_tables=("PRODUCT",),
+    )
+    assert sql.strip()
+
+
+def test_validate_read_only_sql_allows_recursive_cte_without_column_list():
+    sql = validate_read_only_sql(
+        """
+        WITH RECURSIVE ancestors AS (
+            SELECT ID, NAME FROM PRODUCT WHERE ID = 1
+            UNION ALL
+            SELECT p.ID, p.NAME FROM PRODUCT p JOIN ancestors a ON p.ID = a.ID + 1
+        )
+        SELECT * FROM ancestors
+        """,
+        allowed_tables=("PRODUCT",),
+    )
+    assert sql.strip()
+
+
 def test_validate_read_only_sql_allows_product_selects():
     sql = validate_read_only_sql(
         "WITH low_stock AS (SELECT NAME, STOCK FROM PRODUCT WHERE STOCK < 5) SELECT * FROM low_stock",
