@@ -118,14 +118,23 @@ def process_excel_file(
                 elif action == "modify":
                     set_clause = ", ".join([f"{quote_identifier(col)}=?" for col in mapped_row.keys()])
                     values = tuple(mapped_row.values())
-                    cursor.execute(f"UPDATE PRODUCT SET {set_clause} WHERE NAME=?", values + (mapped_row.get('NAME'),))
+                    cursor.execute(
+                        f"UPDATE PRODUCT SET {set_clause} WHERE {quote_identifier('NAME')}=?",
+                        values + (mapped_row.get('NAME'),),
+                    )
                 else:  # add action (or update if product exists)
-                    cursor.execute("SELECT * FROM PRODUCT WHERE NAME=?", (mapped_row.get('NAME'),))
+                    cursor.execute(
+                        f"SELECT * FROM PRODUCT WHERE {quote_identifier('NAME')}=?",
+                        (mapped_row.get('NAME'),),
+                    )
                     existing_product = cursor.fetchone()
                     if existing_product:
                         set_clause = ", ".join([f"{quote_identifier(col)}=?" for col in mapped_row.keys()])
                         values = tuple(mapped_row.values())
-                        cursor.execute(f"UPDATE PRODUCT SET {set_clause} WHERE NAME=?", values + (mapped_row.get('NAME'),))
+                        cursor.execute(
+                            f"UPDATE PRODUCT SET {set_clause} WHERE {quote_identifier('NAME')}=?",
+                            values + (mapped_row.get('NAME'),),
+                        )
                     else:
                         columns = ", ".join(quote_identifier(col) for col in mapped_row.keys())
                         placeholders = ", ".join(["?" for _ in mapped_row])
