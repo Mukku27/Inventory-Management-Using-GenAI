@@ -1,8 +1,0 @@
-analytics
-app
-config
-database
-excel_processing
-prompt
-skills
-utils
