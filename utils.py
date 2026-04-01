@@ -11,7 +11,7 @@ import json
 import re
 import sqlite3
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Sequence
+from typing import Callable, Iterable, Sequence
 
 from prompt import build_column_mapping_prompt
 
@@ -25,17 +25,17 @@ class _MiniSeries:
     def __init__(self, values: Sequence[object]):
         self.values = list(values)
 
-    def tolist(self) -> List[object]:
+    def tolist(self) -> list[object]:
         return list(self.values)
 
 
 class _MiniColumns(list):
-    def tolist(self) -> List[str]:
+    def tolist(self) -> list[str]:
         return list(self)
 
 
 class _MiniDataFrame:
-    def __init__(self, rows: Sequence[Dict[str, object]], columns: Sequence[str] | None = None):
+    def __init__(self, rows: Sequence[dict[str, object]], columns: Sequence[str] | None = None):
         self._rows = [dict(row) for row in rows]
         if columns is None:
             column_names = []
@@ -76,7 +76,7 @@ def _normalize_identifier(value: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", value.upper()).strip("_")
 
 
-def _existing_columns(db_path: str) -> List[str]:
+def _existing_columns(db_path: str) -> list[str]:
     with sqlite3.connect(db_path) as connection:
         cursor = connection.cursor()
         cursor.execute("PRAGMA table_info(PRODUCT)")
@@ -101,7 +101,7 @@ def _rewrite_query_for_known_schema(query: str) -> str:
     return re.sub(r"\bquantity\b", "STOCK", query, flags=re.IGNORECASE)
 
 
-def _to_dataframe(rows: Sequence[Dict[str, object]], columns: Sequence[str]):
+def _to_dataframe(rows: Sequence[dict[str, object]], columns: Sequence[str]):
     if _pandas is not None and hasattr(_pandas, "DataFrame"):  # pragma: no branch - runtime selection.
         return _pandas.DataFrame(list(rows), columns=list(columns))
     return _MiniDataFrame(rows, columns)
@@ -160,7 +160,7 @@ def add_column_to_db(db_path: str, column_name: str, column_type: str | None = N
     return True
 
 
-def _parse_mapping_response(response: str) -> Dict[str, str]:
+def _parse_mapping_response(response: str) -> dict[str, str]:
     response = response.strip()
     if not response:
         return {}
@@ -172,7 +172,7 @@ def _parse_mapping_response(response: str) -> Dict[str, str]:
     except json.JSONDecodeError:
         pass
 
-    mapping: Dict[str, str] = {}
+    mapping: dict[str, str] = {}
     for line in response.splitlines():
         if "->" in line:
             left, right = line.split("->", 1)
@@ -190,9 +190,9 @@ def _parse_mapping_response(response: str) -> Dict[str, str]:
 def _heuristic_column_mapping(
     excel_columns: Iterable[str],
     existing_columns: Iterable[str],
-) -> Dict[str, str]:
+) -> dict[str, str]:
     existing_lookup = {_normalize_identifier(column): column for column in existing_columns}
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
 
     synonym_groups = {
         "NAME": ("NAME", "PRODUCTNAME", "ITEMNAME", "PRODUCT"),
@@ -232,7 +232,7 @@ def map_columns(
     excel_columns: Iterable[str],
     existing_columns: Iterable[str],
     response_fn: Callable[[str], str] | None,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Map Excel column names to the PRODUCT table columns."""
 
     excel_columns = [str(column) for column in excel_columns]
@@ -244,7 +244,7 @@ def map_columns(
             response_mapping = _parse_mapping_response(response_fn(prompt))
             if response_mapping:
                 normalized_existing = {_normalize_identifier(column): column for column in existing_columns}
-                mapped: Dict[str, str] = {}
+                mapped: dict[str, str] = {}
                 for excel_column in excel_columns:
                     raw_value = response_mapping.get(excel_column)
                     if raw_value is None:
