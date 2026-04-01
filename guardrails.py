@@ -153,6 +153,13 @@ def _has_top_level_comma_join(sql: str) -> bool:
                 in_from_clause = False
                 index += len(matched_boundary)
                 continue
+            # Match "FROM" and "JOIN" (each exactly 4 characters).
+            # Compound keywords like LEFT JOIN, CROSS JOIN, and INNER JOIN are
+            # handled implicitly: the leading qualifier (LEFT, CROSS, INNER) is
+            # skipped character-by-character until the scanner reaches "JOIN",
+            # which then sets in_from_clause. This is conservative — any
+            # unquoted comma at depth 0 inside a FROM/JOIN context is flagged —
+            # so compound joins cannot bypass the check.
             if _matches_keyword(sql, index, "FROM") or _matches_keyword(sql, index, "JOIN"):
                 in_from_clause = True
                 index += 4
@@ -195,6 +202,11 @@ def validate_read_only_sql(sql: str, allowed_tables: Iterable[str]) -> str:
     if _has_top_level_comma_join(normalized):
         raise SqlGuardrailViolation("Comma-separated table references are not allowed.")
 
+    # Defense-in-depth ordering: the SELECT/WITH prefix check runs first so that
+    # obviously non-read-only statements (UPDATE, DELETE …) are rejected with a
+    # clear message before the broader forbidden-keyword scan fires. The
+    # forbidden-keyword scan then catches mutation keywords embedded inside
+    # otherwise-SELECT-shaped queries (e.g. WITH x AS (DELETE …) SELECT …).
     if not normalized.startswith(("SELECT", "WITH")):
         raise SqlGuardrailViolation("Only read-only SELECT queries are allowed.")
 

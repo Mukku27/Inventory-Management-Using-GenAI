@@ -33,18 +33,27 @@ def test_append_audit_event_writes_jsonl_next_to_database(tmp_path: Path):
     assert "timestamp" in payload
 
 
-def test_build_sql_generation_prompt_is_versioned():
+def test_build_sql_generation_prompt_contains_question_and_schema():
+    # Prompt metadata (name/version) is recorded in the audit log, not sent to
+    # the model. Verify that the prompt contains the actual content the model needs.
     prompt = build_sql_generation_prompt("PRODUCT(ID, NAME)", "List all products")
 
-    assert f"Prompt name: {SQL_GENERATION_PROMPT_NAME}" in prompt
-    assert f"Prompt version: {SQL_GENERATION_PROMPT_VERSION}" in prompt
+    assert "List all products" in prompt
+    assert "PRODUCT(ID, NAME)" in prompt
+    assert SQL_GENERATION_PROMPT_NAME  # constant must remain non-empty for audit use
+    assert SQL_GENERATION_PROMPT_VERSION
 
 
-def test_build_column_mapping_prompt_is_versioned():
+def test_build_column_mapping_prompt_contains_columns():
+    # Prompt metadata is in the audit log only, not the LLM prompt.
     prompt = build_column_mapping_prompt(["Name", "Price"], ["NAME", "PRICE"])
 
-    assert f"Prompt name: {COLUMN_MAPPING_PROMPT_NAME}" in prompt
-    assert f"Prompt version: {COLUMN_MAPPING_PROMPT_VERSION}" in prompt
+    assert "Name" in prompt
+    assert "Price" in prompt
+    assert "NAME" in prompt
+    assert "PRICE" in prompt
+    assert COLUMN_MAPPING_PROMPT_NAME  # constant must remain non-empty for audit use
+    assert COLUMN_MAPPING_PROMPT_VERSION
 
 
 def test_map_columns_uses_versioned_prompt_builder():
@@ -57,5 +66,6 @@ def test_map_columns_uses_versioned_prompt_builder():
     mapping = map_columns(["Name", "Price"], ["NAME", "PRICE"], fake_response)
 
     assert mapping == {"Name": "NAME", "Price": "PRICE"}
-    assert f"Prompt name: {COLUMN_MAPPING_PROMPT_NAME}" in captured["prompt"]
-    assert f"Prompt version: {COLUMN_MAPPING_PROMPT_VERSION}" in captured["prompt"]
+    # The prompt must contain the columns so the model can produce a mapping.
+    assert "Name" in captured["prompt"]
+    assert "NAME" in captured["prompt"]

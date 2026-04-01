@@ -7,7 +7,6 @@ This module handles the processing of uploaded Excel files and updates the datab
 import sqlite3
 
 import pandas as pd
-import streamlit as st
 
 from audit import append_audit_event
 from guardrails import (
@@ -31,7 +30,6 @@ def preview_excel_import(uploaded_file, db_path, *, emit_audit_event=False):
     """Return the AI-produced column mapping and any pending schema changes."""
 
     df = _read_excel_frame(uploaded_file)
-    st.write("Column names in the uploaded file:", df.columns.tolist())
 
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
@@ -113,7 +111,10 @@ def process_excel_file(
                 mapped_row = {column_mappings[str(col)]: value for col, value in row.items()}
 
                 if action == "remove":
-                    cursor.execute("DELETE FROM PRODUCT WHERE NAME=?", (mapped_row.get('NAME'),))
+                    cursor.execute(
+                        f"DELETE FROM PRODUCT WHERE {quote_identifier('NAME')}=?",
+                        (mapped_row.get('NAME'),),
+                    )
                 elif action == "modify":
                     set_clause = ", ".join([f"{quote_identifier(col)}=?" for col in mapped_row.keys()])
                     values = tuple(mapped_row.values())

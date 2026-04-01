@@ -45,26 +45,33 @@ IMPORT_PREVIEW_STATE_KEY = "excel_import_preview"
 
 
 def _get_uploaded_file_signature(uploaded_file) -> str | None:
+    """Return a cheap cache key for an uploaded file.
+
+    Streamlit's UploadedFile always exposes ``name`` and ``size``, so we use
+    those as a lightweight proxy for file identity. This avoids reading and
+    SHA-256-hashing the entire file on every Streamlit rerun. The tradeoff is
+    that two files with the same name and byte-size but different content would
+    share a cache entry — an extremely unlikely scenario in practice.
+    """
     if uploaded_file is None:
         return None
 
-    payload = None
+    name = getattr(uploaded_file, "name", "")
+    size = getattr(uploaded_file, "size", None)
+    if size is not None:
+        return f"{name}:{size}"
+
+    # Fallback for file-like objects without a size attribute.
     if hasattr(uploaded_file, "getvalue"):
         payload = uploaded_file.getvalue()
         if hasattr(uploaded_file, "seek"):
             uploaded_file.seek(0)
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        if isinstance(payload, (bytes, bytearray)):
+            return f"{name}:{hashlib.sha256(payload).hexdigest()}"
 
-    if isinstance(payload, str):
-        payload = payload.encode("utf-8")
-    if isinstance(payload, (bytes, bytearray)):
-        digest = hashlib.sha256(payload).hexdigest()
-        return f"{getattr(uploaded_file, 'name', '')}:{digest}"
-
-    fallback = "{}:{}".format(
-        getattr(uploaded_file, "name", ""),
-        getattr(uploaded_file, "size", ""),
-    )
-    return hashlib.sha256(fallback.encode("utf-8")).hexdigest()
+    return f"{name}:"
 
 
 def _clear_cached_import_preview() -> None:
@@ -299,6 +306,7 @@ if uploaded_file is None:
 else:
     try:
         import_preview = _get_cached_import_preview(uploaded_file, db_path)
+        st.write("Column names in the uploaded file:", import_preview["dataframe"].columns.tolist())
         st.write("Resolved column mappings:", import_preview["column_mappings"])
         if action in {"remove", "modify"}:
             st.warning(

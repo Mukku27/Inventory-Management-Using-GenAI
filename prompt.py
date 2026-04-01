@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Dict
 
 _DEFAULT_SQL_LIMIT = 100
 SQL_GENERATION_PROMPT_NAME = "sql_generation"
@@ -57,7 +56,7 @@ def _fallback_column_mapping(prompt: str) -> str:
     if database_match:
         database_columns = [value.strip() for value in database_match.group(1).split(",") if value.strip()]
 
-    mapping: Dict[str, str] = {}
+    mapping: dict[str, str] = {}
     db_lookup = {_normalize_token(column): column for column in database_columns}
 
     aliases = {
@@ -94,14 +93,14 @@ def _fallback_column_mapping(prompt: str) -> str:
     return json.dumps(mapping)
 
 
-def get_sql_prompt_metadata() -> Dict[str, str]:
+def get_sql_prompt_metadata() -> dict[str, str]:
     return {
         "prompt_name": SQL_GENERATION_PROMPT_NAME,
         "prompt_version": SQL_GENERATION_PROMPT_VERSION,
     }
 
 
-def get_column_mapping_prompt_metadata() -> Dict[str, str]:
+def get_column_mapping_prompt_metadata() -> dict[str, str]:
     return {
         "prompt_name": COLUMN_MAPPING_PROMPT_NAME,
         "prompt_version": COLUMN_MAPPING_PROMPT_VERSION,
@@ -113,8 +112,6 @@ def build_sql_generation_prompt(db_description: str, question: str) -> str:
 
     return (
         "You are an expert SQL assistant. Generate a single SQL query only.\n"
-        f"Prompt name: {SQL_GENERATION_PROMPT_NAME}\n"
-        f"Prompt version: {SQL_GENERATION_PROMPT_VERSION}\n"
         f"Database description: {db_description}\n"
         f"Question: {question}\n"
         "Return only the SQL statement."
@@ -126,8 +123,6 @@ def build_column_mapping_prompt(excel_columns: list[str], existing_columns: list
 
     return (
         "Map these Excel columns to the database columns.\n"
-        f"Prompt name: {COLUMN_MAPPING_PROMPT_NAME}\n"
-        f"Prompt version: {COLUMN_MAPPING_PROMPT_VERSION}\n"
         f"Excel columns: {', '.join(excel_columns)}\n"
         f"Database columns: {', '.join(existing_columns)}\n"
         "Return only a JSON object or simple key/value mapping."

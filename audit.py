@@ -29,7 +29,13 @@ def get_audit_log_path(db_path: str | Path) -> Path:
 
 
 def append_audit_event(db_path: str | Path, event_type: str, details: Mapping[str, Any]) -> Path:
-    """Append a structured audit event to the JSONL log."""
+    """Append a structured audit event to the JSONL log.
+
+    Note: the log file grows without bound. Log rotation and size limits are
+    intentionally deferred for the MVP. Add rotation (e.g. via
+    logging.handlers.RotatingFileHandler or a periodic cron job) before
+    deploying to a long-running production environment.
+    """
 
     audit_path = get_audit_log_path(db_path)
     audit_path.parent.mkdir(parents=True, exist_ok=True)
