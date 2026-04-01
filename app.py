@@ -54,6 +54,12 @@ def _get_uploaded_file_signature(uploaded_file) -> str | None:
     if uploaded_file is None:
         return None
 
+    # file_id is unique per upload session in Streamlit >=1.x and avoids the
+    # name:size collision risk entirely.
+    file_id = getattr(uploaded_file, "file_id", None)
+    if file_id is not None:
+        return str(file_id)
+
     name = getattr(uploaded_file, "name", "")
     size = getattr(uploaded_file, "size", None)
     if size is not None:
@@ -294,7 +300,8 @@ approve_destructive_action = False
 import_preview = None
 
 if uploaded_file is None:
-    _clear_cached_import_preview()
+    if IMPORT_PREVIEW_STATE_KEY in st.session_state:
+        _clear_cached_import_preview()
 else:
     try:
         import_preview = _get_cached_import_preview(uploaded_file, db_path)

@@ -6,6 +6,10 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
+_SQL_MAX_LENGTH = 100_000  # guard against ReDoS on pathological input
+
+_DESTRUCTIVE_ACTIONS = frozenset({"remove", "modify"})
+
 _FORBIDDEN_SQL_KEYWORDS = (
     "ALTER",
     "ATTACH",
@@ -155,25 +159,26 @@ def _has_top_level_comma_join(sql: str) -> bool:
             continue
 
         if depth == 0:
-            matched_boundary = next(
-                (keyword for keyword in clause_boundaries if _matches_keyword(sql, index, keyword)),
-                None,
-            )
-            if matched_boundary is not None:
-                in_from_clause = False
-                index += len(matched_boundary)
-                continue
-            # Match "FROM" and "JOIN" (each exactly 4 characters).
-            # Compound keywords like LEFT JOIN, CROSS JOIN, and INNER JOIN are
-            # handled implicitly: the leading qualifier (LEFT, CROSS, INNER) is
-            # skipped character-by-character until the scanner reaches "JOIN",
-            # which then sets in_from_clause. This is conservative — any
-            # unquoted comma at depth 0 inside a FROM/JOIN context is flagged —
-            # so compound joins cannot bypass the check.
-            if _matches_keyword(sql, index, "FROM") or _matches_keyword(sql, index, "JOIN"):
-                in_from_clause = True
-                index += 4
-                continue
+            if char.isalpha():
+                matched_boundary = next(
+                    (keyword for keyword in clause_boundaries if _matches_keyword(sql, index, keyword)),
+                    None,
+                )
+                if matched_boundary is not None:
+                    in_from_clause = False
+                    index += len(matched_boundary)
+                    continue
+                # Match "FROM" and "JOIN" (each exactly 4 characters).
+                # Compound keywords like LEFT JOIN, CROSS JOIN, and INNER JOIN are
+                # handled implicitly: the leading qualifier (LEFT, CROSS, INNER) is
+                # skipped character-by-character until the scanner reaches "JOIN",
+                # which then sets in_from_clause. This is conservative — any
+                # unquoted comma at depth 0 inside a FROM/JOIN context is flagged —
+                # so compound joins cannot bypass the check.
+                if _matches_keyword(sql, index, "FROM") or _matches_keyword(sql, index, "JOIN"):
+                    in_from_clause = True
+                    index += 4
+                    continue
             if in_from_clause and char == ",":
                 return True
 
@@ -202,6 +207,11 @@ def validate_read_only_sql(sql: str, allowed_tables: Iterable[str]) -> str:
     candidate = sql.strip()
     if not candidate:
         raise SqlGuardrailViolation("The model did not return a SQL statement.")
+
+    if len(candidate) > _SQL_MAX_LENGTH:
+        raise SqlGuardrailViolation(
+            f"SQL statement exceeds the maximum allowed length of {_SQL_MAX_LENGTH} characters."
+        )
 
     sql_without_literals = _strip_string_literals(candidate)
     if "--" in sql_without_literals or "/*" in sql_without_literals:
@@ -300,5 +310,5 @@ def enforce_destructive_action_policy(
 ) -> None:
     """Reject destructive Excel actions unless the caller has approved them."""
 
-    if str(action).lower() in {"remove", "modify"} and not allow_destructive_actions:
+    if str(action).lower() in _DESTRUCTIVE_ACTIONS and not allow_destructive_actions:
         raise DestructiveActionApprovalRequired(action)

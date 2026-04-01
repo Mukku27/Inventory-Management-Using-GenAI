@@ -110,6 +110,11 @@ def process_excel_file(
             for _, row in df.iterrows():
                 mapped_row = {column_mappings[str(col)]: value for col, value in row.items()}
 
+                if "NAME" not in mapped_row:
+                    raise ValueError(
+                        f"Row is missing a NAME mapping; cannot determine which product to {action}."
+                    )
+
                 if action == "remove":
                     cursor.execute(
                         f"DELETE FROM PRODUCT WHERE {quote_identifier('NAME')}=?",
