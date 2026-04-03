@@ -93,16 +93,113 @@ def excel_processing_module(monkeypatch):
     return module
 
 
-def test_initialize_database_bootstraps_a_deterministic_schema(monkeypatch, tmp_path: Path):
+def test_ensure_schema_creates_product_table(tmp_path: Path):
+    db_path = tmp_path / "schema_only.db"
+    database.ensure_schema(db_path)
+    database.validate_product_schema(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        row_count = connection.execute("SELECT COUNT(*) FROM PRODUCT").fetchone()[0]
+
+    assert row_count == 0
+
+
+def test_ensure_schema_is_idempotent(tmp_path: Path):
+    db_path = tmp_path / "idempotent.db"
+    database.ensure_schema(db_path)
+    # Second call must not raise or duplicate data.
+    database.ensure_schema(db_path)
+    database.validate_product_schema(db_path)
+
+
+def test_ensure_schema_migrates_legacy_quantity_column(tmp_path: Path):
+    db_path = tmp_path / "legacy_quantity.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE PRODUCT (
+                ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                NAME TEXT,
+                CATEGORY TEXT,
+                BRAND TEXT,
+                PRICE REAL,
+                QUANTITY INTEGER,
+                SIZE TEXT,
+                COLOR TEXT,
+                WEIGHT REAL,
+                SPECIFICATIONS TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO PRODUCT
+            (NAME, CATEGORY, BRAND, PRICE, QUANTITY, SIZE, COLOR, WEIGHT, SPECIFICATIONS)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("Widget", "Gadgets", "Acme", 9.99, 12, "M", "Blue", 1.2, "Original widget"),
+        )
+
+    database.ensure_schema(db_path)
+    database.validate_product_schema(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(PRODUCT)").fetchall()]
+        migrated_row = connection.execute(
+            "SELECT NAME, PRICE, STOCK FROM PRODUCT"
+        ).fetchone()
+        schema_version = connection.execute(
+            "SELECT MAX(version) FROM _schema_version"
+        ).fetchone()[0]
+
+    assert "QUANTITY" not in columns
+    assert database.INVENTORY_VALUE_COLUMN in columns
+    assert migrated_row == ("Widget", 9.99, 12)
+    assert schema_version == 1
+
+
+def test_ensure_schema_repairs_legacy_schema_even_with_stale_version_metadata(tmp_path: Path):
+    db_path = tmp_path / "stale_version.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE PRODUCT (
+                ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                NAME TEXT,
+                CATEGORY TEXT,
+                BRAND TEXT,
+                PRICE REAL,
+                QUANTITY INTEGER,
+                SIZE TEXT,
+                COLOR TEXT,
+                WEIGHT REAL,
+                SPECIFICATIONS TEXT
+            )
+            """
+        )
+        connection.execute("CREATE TABLE _schema_version (version INTEGER NOT NULL)")
+        connection.execute("INSERT INTO _schema_version (version) VALUES (1)")
+
+    database.ensure_schema(db_path)
+    database.validate_product_schema(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(PRODUCT)").fetchall()]
+
+    assert "QUANTITY" not in columns
+    assert database.INVENTORY_VALUE_COLUMN in columns
+
+
+def test_seed_database_populates_rows(monkeypatch, tmp_path: Path):
     seeded_rows = [
         ("Widget", "Gadgets", "Acme", 9.99, 12, "M", "Blue", 1.2, "Original widget"),
         ("Cable", "Accessories", "Acme", 4.5, 20, "N/A", "White", 0.3, "Charging cable"),
     ]
-
     monkeypatch.setattr(database, "generate_product_data", lambda num_products: list(seeded_rows))
 
     db_path = tmp_path / "seeded_inventory.db"
-    database.initialize_database(db_path, num_products=len(seeded_rows))
+    database.ensure_schema(db_path)
+    database.seed_database(db_path, num_products=len(seeded_rows))
     database.validate_product_schema(db_path)
 
     with sqlite3.connect(db_path) as connection:
@@ -111,6 +208,36 @@ def test_initialize_database_bootstraps_a_deterministic_schema(monkeypatch, tmp_
 
     assert row_count == len(seeded_rows)
     assert total_value == pytest.approx((9.99 * 12) + (4.5 * 20))
+
+
+def test_seed_database_is_idempotent_by_default(monkeypatch, tmp_path: Path):
+    seeded_rows = [
+        ("Widget", "Gadgets", "Acme", 9.99, 12, "M", "Blue", 1.2, "Original widget"),
+    ]
+    monkeypatch.setattr(database, "generate_product_data", lambda num_products: list(seeded_rows))
+
+    db_path = tmp_path / "idempotent_seed.db"
+    database.ensure_schema(db_path)
+    database.seed_database(db_path)
+    # Second call without force=True must not insert duplicate rows.
+    database.seed_database(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        row_count = connection.execute("SELECT COUNT(*) FROM PRODUCT").fetchone()[0]
+
+    assert row_count == len(seeded_rows)
+
+
+def test_initialize_database_only_applies_schema(tmp_path: Path):
+    db_path = tmp_path / "schema_only.db"
+    database.initialize_database(db_path)
+    database.validate_product_schema(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        row_count = connection.execute("SELECT COUNT(*) FROM PRODUCT").fetchone()[0]
+
+    # initialize_database must not seed rows — seeding is a separate step.
+    assert row_count == 0
 
 
 def test_validate_product_schema_raises_when_table_is_absent(tmp_path: Path):
