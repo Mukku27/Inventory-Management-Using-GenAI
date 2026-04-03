@@ -15,6 +15,7 @@ except ImportError:  # pandasai is not a declared dependency; install manually o
     _PANDASAI_AVAILABLE = False
 
 from analytics import categorize_product, generate_insights, generate_report, predict_stock_needs
+from audit import append_audit_event
 from config import (  # ensure configuration is loaded
     MISSING_CREDENTIALS,
 )
@@ -24,9 +25,74 @@ from database import (
     PRODUCT_TABLE,
     validate_product_schema,
 )
-from excel_processing import process_excel_file
-from prompt import generate_sql_query
+from excel_processing import preview_excel_import, process_excel_file
+from guardrails import (
+    DestructiveActionApprovalRequired,
+    SchemaChangeApprovalRequired,
+    SqlGuardrailViolation,
+    validate_read_only_sql,
+)
+from prompt import (
+    generate_sql_query,
+    get_column_mapping_prompt_metadata,
+    get_sql_prompt_metadata,
+)
 from utils import read_sql_query
+
+IMPORT_PREVIEW_STATE_KEY = "excel_import_preview"
+
+
+def _get_uploaded_file_signature(uploaded_file) -> str | None:
+    """Return a cheap cache key for an uploaded file.
+
+    Streamlit's UploadedFile always exposes ``name`` and ``size``, so we use
+    those as a lightweight proxy for file identity. This avoids reading and
+    SHA-256-hashing the entire file on every Streamlit rerun. The tradeoff is
+    that two files with the same name and byte-size but different content would
+    share a cache entry — an extremely unlikely scenario in practice.
+    """
+    if uploaded_file is None:
+        return None
+
+    # file_id is unique per upload session in Streamlit >=1.x and avoids the
+    # name:size collision risk entirely.
+    file_id = getattr(uploaded_file, "file_id", None)
+    if file_id is not None:
+        return str(file_id)
+
+    name = getattr(uploaded_file, "name", "")
+    size = getattr(uploaded_file, "size", None)
+    if size is not None:
+        return f"{name}:{size}"
+
+    # Cannot build a reliable key without size — signal to the caller that
+    # this file is uncacheable rather than returning a collision-prone string.
+    return None
+
+
+def _clear_cached_import_preview() -> None:
+    st.session_state.pop(IMPORT_PREVIEW_STATE_KEY, None)
+
+
+def _get_cached_import_preview(uploaded_file, db_path):
+    cache_key = _get_uploaded_file_signature(uploaded_file)
+    cached_preview = st.session_state.get(IMPORT_PREVIEW_STATE_KEY)
+    if (
+        cache_key is not None
+        and cached_preview
+        and cached_preview.get("cache_key") == cache_key
+        and cached_preview.get("db_path") == db_path
+    ):
+        return cached_preview["preview"]
+
+    preview = preview_excel_import(uploaded_file, db_path, emit_audit_event=True)
+    if cache_key is not None:
+        st.session_state[IMPORT_PREVIEW_STATE_KEY] = {
+            "cache_key": cache_key,
+            "db_path": db_path,
+            "preview": preview,
+        }
+    return preview
 
 # Set up Streamlit page configuration
 st.set_page_config(
@@ -177,11 +243,48 @@ if st.button("Generate SQL Query"):
             "(ID INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT, STOCK INTEGER, PRICE REAL, CATEGORY TEXT)"
         )
         sql_query = generate_sql_query(db_description, question)
-        st.write("Generated SQL Query:", sql_query)
         try:
-            result_df = read_sql_query(sql_query, db_path)
+            validated_sql = validate_read_only_sql(sql_query, allowed_tables=(PRODUCT_TABLE,))
+            st.write("Generated SQL Query:", validated_sql)
+            result_df = read_sql_query(validated_sql, db_path)
+            append_audit_event(
+                db_path,
+                "sql_query_review",
+                {
+                    **get_sql_prompt_metadata(),
+                    "question": question,
+                    "generated_sql": sql_query,
+                    "validated_sql": validated_sql,
+                    "status": "executed",
+                    "row_count": len(result_df),
+                },
+            )
             st.write(result_df)
+        except SqlGuardrailViolation as exc:
+            append_audit_event(
+                db_path,
+                "sql_query_review",
+                {
+                    **get_sql_prompt_metadata(),
+                    "question": question,
+                    "generated_sql": sql_query,
+                    "status": "blocked",
+                    "error": str(exc),
+                },
+            )
+            st.error(f"Blocked unsafe AI-generated SQL: {exc}")
         except Exception as e:
+            append_audit_event(
+                db_path,
+                "sql_query_review",
+                {
+                    **get_sql_prompt_metadata(),
+                    "question": question,
+                    "generated_sql": sql_query,
+                    "status": "failed",
+                    "error": str(e),
+                },
+            )
             st.error(f"Error executing SQL query: {e}")
     else:
         st.error("Please enter a query.")
@@ -192,11 +295,72 @@ if st.button("Generate SQL Query"):
 st.markdown('<h2>Upload Excel File</h2>', unsafe_allow_html=True)
 uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx"])
 action = st.selectbox("Select Action", ["add", "remove", "modify"])
+approve_schema_changes = False
+approve_destructive_action = False
+import_preview = None
+
+if uploaded_file is None:
+    if IMPORT_PREVIEW_STATE_KEY in st.session_state:
+        _clear_cached_import_preview()
+else:
+    try:
+        import_preview = _get_cached_import_preview(uploaded_file, db_path)
+        st.write("Column names in the uploaded file:", import_preview["dataframe"].columns.tolist())
+        st.write("Resolved column mappings:", import_preview["column_mappings"])
+        if action in {"remove", "modify"}:
+            st.warning(
+                f"The '{action}' action changes or removes existing inventory rows."
+            )
+            approve_destructive_action = st.checkbox(
+                f"Approve the '{action}' action for this import",
+                key=f"approve_destructive_{action}",
+            )
+        if import_preview["proposed_new_columns"]:
+            st.warning(
+                "This import proposes new PRODUCT columns: {}.".format(
+                    ", ".join(import_preview["proposed_new_columns"])
+                )
+            )
+            approve_schema_changes = st.checkbox(
+                "Approve these schema changes for this import",
+                key=f"approve_schema_{action}",
+            )
+    except Exception as exc:
+        append_audit_event(
+            db_path,
+            "excel_import_preview_failed",
+            {
+                **get_column_mapping_prompt_metadata(),
+                "action": action,
+                "uploaded_filename": getattr(uploaded_file, "name", None),
+                "status": "failed",
+                "error": str(exc),
+            },
+        )
+        _clear_cached_import_preview()
+        st.error(f"Unable to preview the Excel import: {exc}")
 
 if st.button("Process Excel File"):
     if uploaded_file:
-        process_excel_file(uploaded_file, db_path, action)
-        st.success(f"Successfully processed the Excel file for {action} action.")
+        try:
+            if import_preview is None:
+                import_preview = _get_cached_import_preview(uploaded_file, db_path)
+            process_excel_file(
+                uploaded_file,
+                db_path,
+                action,
+                allow_schema_changes=approve_schema_changes,
+                allow_destructive_actions=approve_destructive_action,
+                preview=import_preview,
+            )
+            _clear_cached_import_preview()
+            st.success(f"Successfully processed the Excel file for {action} action.")
+        except DestructiveActionApprovalRequired as exc:
+            st.error(str(exc))
+        except SchemaChangeApprovalRequired as exc:
+            st.error(str(exc))
+        except Exception as exc:
+            st.error(f"Unable to process the Excel file: {exc}")
     else:
         st.error("Please upload an Excel file.")
 

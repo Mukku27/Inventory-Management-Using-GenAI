@@ -9,9 +9,12 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Dict
 
 _DEFAULT_SQL_LIMIT = 100
+SQL_GENERATION_PROMPT_NAME = "sql_generation"
+SQL_GENERATION_PROMPT_VERSION = "v1"
+COLUMN_MAPPING_PROMPT_NAME = "column_mapping"
+COLUMN_MAPPING_PROMPT_VERSION = "v1"
 
 
 def _normalize_token(value: str) -> str:
@@ -53,7 +56,7 @@ def _fallback_column_mapping(prompt: str) -> str:
     if database_match:
         database_columns = [value.strip() for value in database_match.group(1).split(",") if value.strip()]
 
-    mapping: Dict[str, str] = {}
+    mapping: dict[str, str] = {}
     db_lookup = {_normalize_token(column): column for column in database_columns}
 
     aliases = {
@@ -90,6 +93,42 @@ def _fallback_column_mapping(prompt: str) -> str:
     return json.dumps(mapping)
 
 
+def get_sql_prompt_metadata() -> dict[str, str]:
+    return {
+        "prompt_name": SQL_GENERATION_PROMPT_NAME,
+        "prompt_version": SQL_GENERATION_PROMPT_VERSION,
+    }
+
+
+def get_column_mapping_prompt_metadata() -> dict[str, str]:
+    return {
+        "prompt_name": COLUMN_MAPPING_PROMPT_NAME,
+        "prompt_version": COLUMN_MAPPING_PROMPT_VERSION,
+    }
+
+
+def build_sql_generation_prompt(db_description: str, question: str) -> str:
+    """Build the versioned SQL-generation prompt."""
+
+    return (
+        "You are an expert SQL assistant. Generate a single SQL query only.\n"
+        f"Database description: {db_description}\n"
+        f"Question: {question}\n"
+        "Return only the SQL statement."
+    )
+
+
+def build_column_mapping_prompt(excel_columns: list[str], existing_columns: list[str]) -> str:
+    """Build the versioned Excel-column mapping prompt."""
+
+    return (
+        "Map these Excel columns to the database columns.\n"
+        f"Excel columns: {', '.join(excel_columns)}\n"
+        f"Database columns: {', '.join(existing_columns)}\n"
+        "Return only a JSON object or simple key/value mapping."
+    )
+
+
 def get_gemini_response(prompt: str, model_name: str = "gemini-1.5-flash") -> str:
     """Return a Gemini response when available, otherwise a deterministic fallback."""
 
@@ -116,12 +155,7 @@ def get_gemini_response(prompt: str, model_name: str = "gemini-1.5-flash") -> st
 def generate_sql_query(db_description: str, question: str) -> str:
     """Generate a SQL query for the question, using Gemini when available."""
 
-    prompt = (
-        "You are an expert SQL assistant. Generate a single SQL query only.\n"
-        f"Database description: {db_description}\n"
-        f"Question: {question}\n"
-        "Return only the SQL statement."
-    )
+    prompt = build_sql_generation_prompt(db_description, question)
 
     response = get_gemini_response(prompt)
     sql = response.strip().strip("`")

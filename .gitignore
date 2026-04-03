@@ -399,3 +399,7 @@ FodyWeavers.xsd
 
 venv
 .env
+
+# Python build artifacts
+*.db
+*.egg-info/
